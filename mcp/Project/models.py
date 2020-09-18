@@ -733,7 +733,7 @@ A Single Commit of a Project
       summary = self.summary
 
       if summary[ 'status' ] == 'Success':
-        scm.postCommitStatus( self.commit, self.branch, 'success', 'Passed' )
+        scm.postCommitStatus( self.commit, self.branch, 'success', 'Passed', coverage=????? )
       elif summary[ 'status' ] == 'Failed':
         scm.postCommitStatus( self.commit, self.branch, 'failure', 'Failure' )
       else:

@@ -68,7 +68,7 @@ class GitHub():
 
     commit.create_comment( comment, GithubObject.NotSet, GithubObject.NotSet, GithubObject.NotSet )
 
-  def postCommitStatus( self, commit_hash, branch, state, description=None ):
+  def postCommitStatus( self, commit_hash, branch, state, description=None, coverage=None ):
     if state not in ( 'pending', 'success', 'error', 'failure' ):
       raise GitHubException( 'Invalid state' )
 

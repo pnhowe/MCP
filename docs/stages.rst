@@ -97,7 +97,7 @@ example::
 Make targets Run on target resource (By nullunit)
 -------------------------------------------------
 
-nullunit setts the folling environment variables:
+nullunit sets the folling environment variables:
 
 - NULLUNIT=1
 - BUILD_NAME : for builds on the release branch this is a plain number, for other branches it is the number for the last

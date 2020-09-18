@@ -46,6 +46,7 @@ test-setup:
 	su postgres -c "echo \"CREATE ROLE mcp WITH PASSWORD 'mcp' NOSUPERUSER NOCREATEROLE CREATEDB LOGIN;\" | psql"
 	pip3 install -e .
 	cp mcp.conf.sample mcp/settings.py
+	touch test-setup
 
 lint:
 	flake8 --ignore=E501,E201,E202,E111,E126,E114,E402,W605 --statistics .

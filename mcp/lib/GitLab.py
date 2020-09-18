@@ -67,7 +67,12 @@ class GitLab():
     data[ 'note' ] = comment
     commit.comments.create( data )
 
-  def postCommitStatus( self, commit_hash, branch, state, description=None ):
+  def postCommitStatus( self, commit_hash, branch, state, description=None, coverage=None ):
+    if state == 'failure':
+      state = 'failed'
+    if state == 'error':
+      state = 'canceled'
+
     if state not in ( 'pending', 'running', 'success', 'failed', 'canceled' ):
       raise GitLabException( 'Invalid state' )
 
@@ -90,9 +95,8 @@ class GitLab():
     data[ 'context' ] = 'MCP Tests'
     if description is not None:
       data[ 'description' ] = description
-
-    # target_url
-    # data[ 'coverage' ] = coverage
+    if coverage is not None:
+      data[ 'coverage' ] = coverage
 
     commit.statuses.create( data )
 
