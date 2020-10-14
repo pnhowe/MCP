@@ -136,10 +136,10 @@ for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=True,
 # Iterate over the Ran jobs
 for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False, reported_at__isnull=True, released_at__isnull=True ):
   if job.commit is not None:
-    job.commit.signalComplete( job.target, job.build.name, job.suceeded )
+    job.commit.signalComplete( job.target, job.build.name, job.succeeded )
 
   elif job.promotion is not None:
-    job.promotion.signalComplete( job.build, job.suceeded )
+    job.promotion.signalComplete( job.build, job.succeeded )
 
   else:
     logging.info( 'Job has nothing to report to, hopfully that was intentional' )
@@ -168,7 +168,7 @@ for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False
 
 # iterate over the Reported jobs that are not manual and look to see if the resources are all released
 for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False, reported_at__isnull=False, acknowledged_at__isnull=True, released_at__isnull=True, manual=False ):
-  if job.suceeded:  # success auto Acknoledges
+  if job.succeeded:  # success auto Acknoledges
     job.acknowledged_at = datetime.now( timezone.utc )
     job.full_clean()
     job.save()

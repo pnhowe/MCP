@@ -310,11 +310,11 @@ function hashChange( event )
                 var item = data[ uri ];
                 var buttons = '';
 
-                if( item.state == 'reported' && ( item.manual || !item.suceeded ) )
+                if( item.state == 'reported' && ( item.manual || !item.succeeded ) )
                 {
                   buttons = '<button type="button" class="btn btn-primary btn-sm" uri="' + uri + '" kind="' + item.target + ' job" action="acknowledge" do="action">Acknowledge</button>';
                 }
-                if( item.state == 'built' && ( item.manual || !item.suceeded ) )
+                if( item.state == 'built' && ( item.manual || !item.succeeded ) )
                 {
                   buttons = '<button type="button" class="btn btn-danger btn-sm" uri="' + uri + '" kind="' + item.target + ' job" action="jobRan" do="action">Force Ran</button>';
                 }
@@ -325,7 +325,7 @@ function hashChange( event )
                   var targetIcon = '<i class="fa fa-dot-circle fa-lg fa-fw"></i>'
                 }
                 var distro = item.build.split(':')[2]
-                jobEntry += '<div class="panel panel-default"><div class="panel-body" id="build-id-' + buildID + '"><ul class="list-inline"><li>' + targetIcon + '&nbsp;' + item.target + '</li><li>build #' + buildID + '<li>state: ' + item.state + '</li><li>suceded: ' + item.suceeded + '</li><li>score: ' + item.score + '</li><li>' + buttons + '</li></ul></div><ul class="list-group">'
+                jobEntry += '<div class="panel panel-default"><div class="panel-body" id="build-id-' + buildID + '"><ul class="list-inline"><li>' + targetIcon + '&nbsp;' + item.target + '</li><li>build #' + buildID + '<li>state: ' + item.state + '</li><li>succeeded: ' + item.suceeded + '</li><li>score: ' + item.score + '</li><li>' + buttons + '</li></ul></div><ul class="list-group">'
 
                 var resources = item.instance_summary
                 for( var key in resources )
@@ -503,10 +503,10 @@ function hashChange( event )
         {
           var item = data[ uri ];
           var buttons = '';
-          if( item.state == 'reported' && ( item.manual || !item.suceeded ) )
+          if( item.state == 'reported' && ( item.manual || !item.succeeded ) )
           buttons = '<button uri="' + uri + '" action="acknowledge" do="action">Acknowledge</button>';
 
-          jobEntries.append( '<tr><td>' + item.project + '</td><td>' + item.target + '</td><td>' + item.state + '</td><td>' + item.resources + '</td><td>' + item.manual + '</td><td>' + item.suceeded + '</td><td>' + item.score + '</td><td>' + item.created + '</td><td>' + item.updated + '</td><td>' + buttons + '</td><td>' + JSON.stringify( item.package_file_map ) + '</td></tr>' );
+          jobEntries.append( '<tr><td>' + item.project + '</td><td>' + item.target + '</td><td>' + item.state + '</td><td>' + item.resources + '</td><td>' + item.manual + '</td><td>' + item.succeeded + '</td><td>' + item.score + '</td><td>' + item.created + '</td><td>' + item.updated + '</td><td>' + buttons + '</td><td>' + JSON.stringify( item.package_file_map ) + '</td></tr>' );
         }
       }
     ).fail(

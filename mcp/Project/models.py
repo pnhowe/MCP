@@ -1,5 +1,6 @@
 import re
 import os
+import base64
 import difflib
 from datetime import datetime
 
@@ -622,6 +623,11 @@ A Single Commit of a Project
     else:
       return result
 
+  @property
+  def uiURL( self ):
+     # self.commit not encded in curent UI
+    return settings.MCP_UI_HOST 'http://mcp/#project/{0}'.format( base64.b64encode( '/api/v1/Project/Project:{0}:'.format( self.project ) ) )
+
   def setResults( self, target, name, results ):
     if target not in ( 'lint', 'test', 'rpm', 'dpkg', 'respkg', 'resource', 'doc' ):
       return
@@ -707,7 +713,7 @@ A Single Commit of a Project
     if not self.branch.startswith( '_PR' ) and not self.branch.startswith( '_MR' ):  # TODO: there should be a better way to do this, apears one more time
       return
 
-    self.project.scm.postCommitStatus( self.commit, self.branch, 'pending' )
+    self.project.scm.postCommitStatus( self.commit, self.branch, 'pending', target_url=self.uiURL )
 
   def postResults( self ):
     if self.project.type == 'GitProject':
@@ -733,11 +739,11 @@ A Single Commit of a Project
       summary = self.summary
 
       if summary[ 'status' ] == 'Success':
-        scm.postCommitStatus( self.commit, self.branch, 'success', 'Passed', coverage=????? )
+        scm.postCommitStatus( self.commit, self.branch, 'success', 'Passed', target_url=self.uiURL, coverage=summary[ 'test' ][ 'score' ] )
       elif summary[ 'status' ] == 'Failed':
-        scm.postCommitStatus( self.commit, self.branch, 'failure', 'Failure' )
+        scm.postCommitStatus( self.commit, self.branch, 'failure', 'Failure', target_url=self.uiURL )
       else:
-        scm.postCommitStatus( self.commit, self.branch, 'error', 'Bad State "{0}"'.format( summary[ 'status' ] ) )
+        scm.postCommitStatus( self.commit, self.branch, 'error', 'Bad State "{0}"'.format( summary[ 'status' ] ), target_url=self.uiURL )
 
       # gh.setOwner()
 

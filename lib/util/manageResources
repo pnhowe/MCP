@@ -15,8 +15,6 @@ from mcp.Project.models import Project, Build, BuildResource
 from mcp.Resource.models import Site, Network, DynamicResource
 from mcp.lib.t3kton import getContractor
 
-RESOURCE_OS_LIST = ( 'ubuntu-trusty', 'ubuntu-xenial', 'ubuntu-bionic', 'debian-buster', 'centos-6', 'centos-7', 'esx', 'proxmox' )
-
 parser = argparse.ArgumentParser( description='resource manager - add/remove static and dynamic resources' )
 parser.add_argument( '--site-list', help='List the Curent Sites', action='store_true'  )
 parser.add_argument( '--site-add', help='Add a Site, this should be the site name on Contractor', metavar='SITE NAME' )

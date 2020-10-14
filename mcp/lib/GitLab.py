@@ -2,14 +2,16 @@ import os
 import logging
 
 from gitlab import Gitlab
-from gitlab.exceptions import GitlabAuthenticationError, GitlabGetError
+from gitlab.exceptions import GitlabAuthenticationError, GitlabGetError, GitlabCreateError
+
+from mcp.lib.SCM import SCM, SCMException
 
 
-class GitLabException( Exception ):
+class GitLabException( SCMException ):
   pass
 
 
-class GitLab():
+class GitLab( SCM ):
   def __init__( self, host, proxy, private_token, project ):
     if proxy is not None:
       proxy_save = (  os.getenv( 'http_proxy' ), os.getenv( 'https_proxy' ) )
@@ -65,9 +67,12 @@ class GitLab():
 
     data = {}
     data[ 'note' ] = comment
-    commit.comments.create( data )
+    try:
+      commit.comments.create( data )
+    except GitlabCreateError as e:
+      raise GitLabException( 'Error creating commit comment: "{0}"'.format( e ) )
 
-  def postCommitStatus( self, commit_hash, branch, state, description=None, coverage=None ):
+  def postCommitStatus( self, commit_hash, branch, state, description=None, coverage=None, target_url=None ):
     if state == 'failure':
       state = 'failed'
     if state == 'error':
@@ -82,10 +87,8 @@ class GitLab():
 
     # work arround for bug
     # https://gitlab.com/gitlab-org/gitlab/-/issues/16491
-
     mr = self._getMergeRequest( self.branchToMerge( branch ) )
     commit = self.conn.projects.get( mr.attributes[ 'source_project_id' ] ).commits.get( commit_hash )
-
     # end work arround
     #   the "normal" commit sould be the one above
     #   and remove branch from the paramater list
@@ -97,8 +100,13 @@ class GitLab():
       data[ 'description' ] = description
     if coverage is not None:
       data[ 'coverage' ] = coverage
+    if target_url is not None:
+      data[ 'target_url' ] = target_url
 
-    commit.statuses.create( data )
+    try:
+      commit.statuses.create( data )
+    except GitlabCreateError as e:
+      raise GitLabException( 'Error creating commit status: "{0}"'.format( e ) )
 
   def postMergeComment( self, id, comment ):
     mr = self._getMergeRequest( id )
@@ -108,7 +116,10 @@ class GitLab():
 
     data = {}
     data[ 'body' ] = comment
-    mr.notes.create( data )
+    try:
+      mr.notes.create( data )
+    except GitlabCreateError as e:
+      raise GitLabException( 'Error creating MR notes: "{0}"'.format( e ) )
 
   def getMergeList( self ):
     return [ i.get_id() for i in self._project.mergerequests.list( state='opened' ) if not i.attributes[ 'work_in_progress' ] ]

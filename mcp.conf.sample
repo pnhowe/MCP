@@ -49,6 +49,7 @@ DEBUG_DUMP_LOCATION = '/tmp'
 
 MCP_HOST = 'http://mcp'
 MCP_PROXY = None
+MCP_UI_HOST = 'http://mcp'
 
 # Application definition
 

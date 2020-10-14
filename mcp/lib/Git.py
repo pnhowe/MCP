@@ -1,23 +1,13 @@
+from mcp.lib.SCM import SCM, SCMException
 
 
-class Git():
+class GitException( SCMException ):
+  pass
+
+
+class Git( SCM ):
   def __init__( self, repo ):
     self.repo = repo
-
-  def postCommitComment( self, commit_hash, comment, line=None, path=None, position=None ):
-    pass
-
-  def postCommitStatus( self, commit_hash, branch, state, description=None, coverage=None ):
-    pass
-
-  def postMergeComment( self, id, comment ):
-    pass
-
-  def getMergeList( self ):
-    return [ ]
-
-  def branchToMerge( self, branch_name ):
-    return None
 
   def mergeToBranch( self, merge ):
     raise Exception( 'Merges not supported by generic git' )

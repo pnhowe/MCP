@@ -3,12 +3,14 @@ import logging
 
 from github import Github, GithubObject, BadCredentialsException, UnknownObjectException
 
+from mcp.lib.SCM import SCM, SCMException
 
-class GitHubException( Exception ):
+
+class GitHubException( SCMException ):
   pass
 
 
-class GitHub():
+class GitHub( SCM ):
   def __init__( self, host, proxy, user, password, org, repo ):
     if proxy is not None:
       proxy_save = (  os.getenv( 'http_proxy' ), os.getenv( 'https_proxy' ) )
@@ -68,7 +70,7 @@ class GitHub():
 
     commit.create_comment( comment, GithubObject.NotSet, GithubObject.NotSet, GithubObject.NotSet )
 
-  def postCommitStatus( self, commit_hash, branch, state, description=None, coverage=None ):
+  def postCommitStatus( self, commit_hash, branch, state, description=None, coverage=None, target_url=None ):
     if state not in ( 'pending', 'success', 'error', 'failure' ):
       raise GitHubException( 'Invalid state' )
 
@@ -80,8 +82,11 @@ class GitHub():
     if description is None:
       description = GithubObject.NotSet
 
+    if target_url is None:
+      target_url = GithubObject.NotSet
+
     try:
-      commit.create_status( state, GithubObject.NotSet, description, 'MCP Tests' )  # state, target_url, description, context
+      commit.create_status( state, target_url, description, 'MCP Tests' )
     except UnknownObjectException:
       logging.warning( 'Unable to set status on commit "{0}" of "{1}" in "{2}", check permissions'.format( commit_hash, self.repo, self.org ) )
 
