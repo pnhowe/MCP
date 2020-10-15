@@ -99,7 +99,10 @@ class GitLab( SCM ):
     if description is not None:
       data[ 'description' ] = description
     if coverage is not None:
-      data[ 'coverage' ] = coverage
+      try:
+        data[ 'coverage' ] = float( coverage )
+      except ValueError:
+        pass
     if target_url is not None:
       data[ 'target_url' ] = target_url
 

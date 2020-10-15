@@ -626,7 +626,7 @@ A Single Commit of a Project
   @property
   def uiURL( self ):
      # self.commit not encded in curent UI
-    return settings.MCP_UI_HOST 'http://mcp/#project/{0}'.format( base64.b64encode( '/api/v1/Project/Project:{0}:'.format( self.project ) ) )
+    return '{0}/#project/{1}'.format( settings.MCP_UI_HOST, base64.b64encode( '/api/v1/Project/Project:{0}:'.format( self.project.name ).encode() ).decode() )
 
   def setResults( self, target, name, results ):
     if target not in ( 'lint', 'test', 'rpm', 'dpkg', 'respkg', 'resource', 'doc' ):
