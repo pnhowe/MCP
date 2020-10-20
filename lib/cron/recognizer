@@ -87,7 +87,7 @@ for commit in Commit.objects.filter( done_at__isnull=True, test_at__isnull=True 
       try:
         commit.postResults()
       except SCMException:
-        slack.post_message( 'Unable to Post Results for Commit, commit "{0}" of Project "{0}" Branch "{0}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
+        slack.post_message( 'Unable to Post Results for Commit, commit "{0}" of Project "{1}" Branch "{2}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
 
     else:
       slack.post_message( 'Test for "{0}", branch "{1}" Success.'.format( commit.project.name, commit.branch ), slack.SUCCESS )
@@ -131,7 +131,7 @@ for commit in Commit.objects.filter( done_at__isnull=True, test_at__isnull=False
       try:
         commit.postResults()
       except SCMException:
-        slack.post_message( 'Unable to Post Results for Commit, commit "{0}" of Project "{0}" Branch "{0}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
+        slack.post_message( 'Unable to Post Results for Commit, commit "{0}" of Project "{1}" Branch "{2}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
 
       # clean up any package file that might of been uploaded to packrat
       if commit.branch == commit.project.release_branch:  # tag version
@@ -225,7 +225,7 @@ for commit in Commit.objects.filter( done_at__isnull=True, test_at__isnull=False
   try:
     commit.postResults()
   except SCMException:
-    slack.post_message( 'Unable to Post Results for Commit, commit "{0}" of Project "{0}" Branch "{0}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
+    slack.post_message( 'Unable to Post Results for Commit, commit "{0}" of Project "{1}" Branch "{2}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
   commit.full_clean()
   commit.save()
   continue

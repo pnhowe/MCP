@@ -271,7 +271,7 @@ def _failCommit( commit, message ):
   try:
     commit.postResults()
   except SCMException:
-    slack.post_message( 'Unable to Fail Commit, commit "{0}" of Project "{0}" Branch "{0}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
+    slack.post_message( 'Unable to Fail Commit, commit "{0}" of Project "{1}" Branch "{2}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
 
 
 for project in Project.objects.all().order_by( 'last_checked' ):
@@ -475,7 +475,7 @@ for project in Project.objects.all().order_by( 'last_checked' ):
     try:
       commit.postInProcess()
     except SCMException:
-      slack.post_message( 'Unable to flag Commit as in process, Commit "{0}" of Project "{0}" Branch "{0}", job will still run.'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
+      slack.post_message( 'Unable to flag Commit as in process, Commit "{0}" of Project "{1}" Branch "{2}", job will still run.'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
 
   project.last_checked = datetime.now( timezone.utc )
   project.full_clean()
