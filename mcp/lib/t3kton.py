@@ -27,7 +27,8 @@ class Contractor():
 
   def allocateDynamicResource( self, site_id, complex_id, blueprint_id, config_values, interface_map, hostname ):
     complex_uri = '/api/v1/Building/Complex:{0}:'.format( complex_id )
-    foundation = self.cinp.call( '{0}(createFoundation)'.format( complex_uri ), { 'hostname': hostname, 'interface_name_list': [], 'site': '/api/v1/Site/Site:{0}:'.format( site_id ) } )
+    interface_map_list = [ { 'name': name, 'network_id': interface[ 'network_id' ] } for name, interface in interface_map.items() ]
+    foundation = self.cinp.call( '{0}(createFoundation)'.format( complex_uri ), { 'hostname': hostname, 'interface_map_list': interface_map_list, 'site': '/api/v1/Site/Site:{0}:'.format( site_id ) } )
 
     data = {}
     data[ 'site' ] = '/api/v1/Site/Site:{0}:'.format( site_id )
@@ -37,17 +38,7 @@ class Contractor():
     data[ 'config_values' ] = config_values
     structure = self.cinp.create( '/api/v1/Building/Structure', data )[0]
 
-    counter = 0
     for name, interface in interface_map.items():
-      data = {}
-      data[ 'foundation' ] = foundation
-      data[ 'physical_location' ] = 'eth{0}'.format( counter )
-      data[ 'name' ] = name
-      data[ 'network' ] = '/api/v1/Utilities/Network:{0}:'.format( interface[ 'network_id' ] )
-      data[ 'is_provisioning' ] = bool( counter == 0 )
-      self.cinp.create( '/api/v1/Utilities/RealNetworkInterface', data )
-      counter += 1
-
       data = {}
       data[ 'networked' ] = structure.replace( '/Building/Structure:', '/Utilities/Networked:' )
       data[ 'interface_name' ] = name

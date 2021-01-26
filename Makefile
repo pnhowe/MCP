@@ -49,7 +49,7 @@ test-setup:
 	touch test-setup
 
 lint:
-	flake8 --ignore=E501,E201,E202,E111,E126,E114,E402,W605 --statistics .
+	flake8 --ignore=E501,E201,E202,E111,E126,E114,E402 --statistics .
 
 test:
 	py.test-3 -x --cov=mcp --cov-report html --cov-report term --ds=mcp.settings -vv mcp
@@ -102,7 +102,7 @@ installcheck-depends:
 	echo mcp:dev
 
 installcheck-resources:
-	echo mcp:{ \"resource_name\": \"ubuntu-bionic\" }
+	echo mcp:{ \"resource\": \"vm\", \"blueprint\": \"ubuntu-bionic-base\", \"config_values\": { \"\<repo_list\": [ { \"distribution\":\"{{ distro_version }}\", \"type\":\"apt\" ,\"uri\":\"http://repo/apt-dev\", \"components\":[ \"main\" ], \"proxy\":\"local\", \"key_uri\": \"http://repo/repo-key\" } ] } }
 
 installcheck:
 	apt install -y mcp

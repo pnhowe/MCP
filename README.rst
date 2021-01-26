@@ -24,10 +24,10 @@ from source::
 
 then::
 
-  su postgres -c "echo \"CREATE ROLE packrat WITH PASSWORD 'mcp' NOSUPERUSER NOCREATEDB NOCREATEROLE LOGIN;\" | psql"
+  su postgres -c "echo \"CREATE ROLE mcp WITH PASSWORD 'mcp' NOSUPERUSER NOCREATEDB NOCREATEROLE LOGIN;\" | psql"
   su postgres -c "createdb -O mcp mcp"
   /usr/lib/mcp/util/manage.py migrate
-  /usr/lib/mcp/setup/setupWizzard
+  /usr/lib/mcp/setup/setupWizard
 
 you will want to setup the starting resources, first add a site, the site name (test1), should match the site id in
 contractor you want to use::

@@ -36,7 +36,7 @@ from mcp.lib.SCM import SCMException
 WORK_DIR = '/tmp/rinzler'
 PID_FILE = '/var/run/rinzler.pid'
 
-name_regex = re.compile( '^[a-zA-Z0-9][a-zA-Z0-9_\-]*$' )  # from contractor/fields.py
+name_regex = re.compile( r'^[a-zA-Z0-9][a-zA-Z0-9_\-]*$' )  # from contractor/fields.py
 
 blueprint_cache_map = {}
 
@@ -390,7 +390,7 @@ for project in Project.objects.all().order_by( 'last_checked' ):
       _failCommit( commit, 'Error Retreiving Test BluePrints from Makefile' )
       continue
 
-    commit.lint_results = dict( zip( blueprint_list, [{}] * len( blueprint_list ) ) )
+    commit.lint_results = dict( zip( blueprint_list, [ dict() for _ in range( 0, len( blueprint_list ) ) ] ) )
     commit.test_results = commit.lint_results
     commit.build_results = {}
 
@@ -405,7 +405,7 @@ for project in Project.objects.all().order_by( 'last_checked' ):
         continue
 
       if blueprint_list:
-        commit.build_results[ tmp ] = dict( zip( blueprint_list, [{}] * len( blueprint_list ) ) )
+        commit.build_results[ tmp ] = dict( zip( blueprint_list, [ dict() for _ in range( 0, len( blueprint_list ) ) ] ) )
 
     if branch == project.release_branch:
       logging.info( 'Adding Doc Build...' )
@@ -414,7 +414,7 @@ for project in Project.objects.all().order_by( 'last_checked' ):
       except MakeException:
         blueprint_list = []
 
-      commit.doc_results = dict( zip( blueprint_list, [{}] * len( blueprint_list ) ) )
+      commit.doc_results = dict( zip( blueprint_list, [ dict() for _ in range( 0, len( blueprint_list ) ) ] ) )
 
     commit.build_results = commit.build_results
 

@@ -27,7 +27,7 @@ def base_config_values():
            'confluence_host': 'http://confluence',
            'confluence_proxy': '',
            'nullunit_packrat_username': 'nullunit',
-           'nullunit_packrat_password': 'nullunit',
+           'nullunit_packrat_password': 'nullunit',  # TODO: generate a one time token for packrat/contractor/etc... probably have to have something like VAULT help with this
            'nullunit_confluence_username': 'nullunit',
            'nullunit_confluence_password': 'nullunit',
            'mcp_host': settings.MCP_HOST,
@@ -586,7 +586,7 @@ class BuildJobResourceInstance( models.Model ):
     return result
 
   @config_values.setter
-  def config_values( self, value):
+  def config_values( self, value ):
     self._config_values = value
 
   @cinp.action( paramater_type_list=[ 'String' ] )

@@ -12,7 +12,7 @@ import getpass
 
 from django.contrib.auth.models import User, Permission
 
-parser = argparse.ArgumentParser( description='MCP SetupWizzard, must be run as root' )
+parser = argparse.ArgumentParser( description='MCP SetupWizard, must be run as root' )
 parser.add_argument( '--root-password', help='password to use for the root user, if not specified it will be prompted for' )
 
 args = parser.parse_args()

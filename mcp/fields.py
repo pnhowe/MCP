@@ -4,9 +4,9 @@ import pickle
 from django.db import models
 from django.core.exceptions import ValidationError
 
-name_regex = re.compile( '^[a-zA-Z0-9][a-zA-Z0-9_\-]*$' )
-package_filename_regex = re.compile( '^[0-9a-zA-Z\-_\.]+$' )  # from packrat.fields.filename_regex
-packagefile_regex = re.compile( '/api/v2/Package/PackageFile:[0-9]+:')
+name_regex = re.compile( r'^[a-zA-Z0-9][a-zA-Z0-9_\-]*$' )
+package_filename_regex = re.compile( r'^[0-9a-zA-Z\-_\.]+$' )  # from packrat.fields.filename_regex
+packagefile_regex = re.compile( r'/api/v2/Package/PackageFile:[0-9]+:')
 TAG_NAME_LENGTH = 10  # from packrat Attrib/models.py, length of the Tag name
 PACKAGE_FILENAME_LENGTH = 100  # something some where in packrat defines this?
 BLUEPRINT_NAME_LENGTH = 40  # from contractor Blueprint/models.py BluePrint name length
@@ -45,7 +45,7 @@ class MapField( models.BinaryField ):
     kwargs[ 'editable' ] = self.editable
     return name, path, args, kwargs
 
-  def from_db_value( self, value, expression, connection, context ):
+  def from_db_value( self, value, expression, connection ):
     if value is None:
       return None
 
