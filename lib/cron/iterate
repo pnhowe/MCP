@@ -23,7 +23,7 @@ switch=$( date +"%M" | tail -c2 )
 
 touch /var/run/mcpIterate.lock
 
-if [ "x$switch" == "x3" ] || [ "x$switch" == "x6" ] || [ "x$switch" == "x9" ]
+if [ "x$switch" == "x1" ] || [ "x$switch" == "x3" ] || [ "x$switch" == "x6" ] || [ "x$switch" == "x9" ]
 then
   # get packages up to date
   /usr/lib/mcp/cron/tron $ARGS

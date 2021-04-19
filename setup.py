@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import glob
 from distutils.core import setup
 from distutils.command.build_py import build_py
 from setuptools import find_packages

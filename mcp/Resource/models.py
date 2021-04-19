@@ -141,6 +141,11 @@ class ResourceInstance( models.Model ):
   def cleanup( self ):
     self.subclass.cleanup()
 
+  @cinp.check_auth()
+  @staticmethod
+  def checkAuth( user, verb, id_list, action=None ):
+    return True
+
   def __str__( self ):
     return 'ResourceInstance'
 

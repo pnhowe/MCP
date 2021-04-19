@@ -285,7 +285,9 @@ for project in Project.objects.all().order_by( 'last_checked' ):
 
   if project.commit_set.all().count() > project.max_commit_count:
     # just delete the last one, this get's called enough it will eventually get the list trimmed down
-    project.commit_set.all().order_by( 'created' )[0].delete()
+    commit = project.commit_set.all().order_by( 'created' )[0]
+    commit.promotion_set.all().delete()
+    commit.delete()
 
   url = project.clone_git_url
 
