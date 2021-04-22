@@ -10,7 +10,7 @@ from cinp.orm_django import DjangoCInP as CInP
 from mcp.fields import MapField, package_filename_regex, packagefile_regex, TAG_NAME_LENGTH, BLUEPRINT_NAME_LENGTH
 
 from mcp.Project.models import Build, Project, Commit
-from mcp.Resource.models import ResourceInstance, Network
+from mcp.Resource.models import ResourceInstance, Network, Site
 
 
 cinp = CInP( 'Processor', '0.1' )
@@ -121,23 +121,23 @@ QueueItem
     network_map = {}
     other_ip_count = 0
 
+    site = Site.objects.all().order_by( '?' )[0]  # yeah we might guess and pick the wrong site, but it will get retried, we should do some site scoring and do that instead
+
     # first allocate the network(s)
     for name, item in self.build.network_map.items():
       if item[ 'dedicated' ]:
         try:
-          network_map[ name ] = Network.objects.filter( monolithic=True, size__gte=item[ 'min_addresses' ], buildjob=None )[ 0 ].name
+          network_map[ name ] = Network.objects.filter( monolithic=True, size__gte=item[ 'min_addresses' ], buildjob=None, site=site )[ 0 ].name
         except IndexError:
           missing_list.append( 'Network for "{0}" Not Available'.format( name ) )
 
       else:
-        for network in Network.objects.filter( monolithic=False, size__gte=item[ 'min_addresses' ] ):
+        for network in Network.objects.filter( monolithic=False, size__gte=item[ 'min_addresses' ], site=site ):
           if network.available( item[ 'min_addresses' ] ):
              network_map[ name ] = network.name
              break
 
-        try:
-          network[ name ]
-        except KeyError:
+        else:
           missing_list.append( 'Network for "{0}" Not Available'.format( name ) )
 
     if missing_list:
@@ -147,7 +147,7 @@ QueueItem
     for buildresource in self.build.buildresource_set.all():
       quantity = buildresource.quantity
       resource = buildresource.resource.subclass
-      if not resource.available( quantity, buildresource.interface_map ):
+      if not resource.available( site, quantity, buildresource.interface_map ):
         missing_list.append( 'Resource "{0}" Not Available'.format( resource.name ) )
 
       buildresource_list.append( buildresource )
@@ -164,14 +164,12 @@ QueueItem
 
     # lastly make sure we have the IPs
     if other_ip_count:
-      for network in Network.objects.filter( monolithic=False, size__gte=other_ip_count ).exclude( pk__in=network_map.items() ):
+      for network in Network.objects.filter( monolithic=False, size__gte=other_ip_count ).exclude( pk__in=network_map.items(), site=site ):
         if network.available( other_ip_count ):
            network_map[ '_OTHER_' ] = network.name
            break
 
-      try:
-        network_map[ '_OTHER_' ]
-      except KeyError:
+      else:
         missing_list.append( 'Other Network Not Available' )
 
     if missing_list:
@@ -530,7 +528,7 @@ class BuildJobResourceInstance( models.Model ):
   blueprint = models.CharField( max_length=BLUEPRINT_NAME_LENGTH )
   _config_values = MapField( blank=True )
   autorun = models.BooleanField( default=False )
-  cookie = models.CharField( max_length=36, default=getCookie )
+  cookie = models.CharField( max_length=36, default=getCookie )  # blank=True, null=True, editable=False ?
   # build info
   name = models.CharField( max_length=50, blank=True, null=True  )
   index = models.IntegerField( blank=True, null=True )

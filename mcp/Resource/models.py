@@ -53,17 +53,16 @@ Site
 
 @cinp.model( not_allowed_verb_list=[ 'CREATE', 'DELETE', 'UPDATE', 'CALL' ] )
 class Resource( models.Model ):
-  key = models.CharField( max_length=250, editable=False, primary_key=True )  # until django supports multi filed primary keys
-  site = models.ForeignKey( Site, on_delete=models.CASCADE )
-  name = models.CharField( max_length=50 )
+  name = models.CharField( max_length=50, primary_key=True )
+  sites = models.ManyToManyField( Site )
   description = models.CharField( max_length=100 )
   created = models.DateTimeField( editable=False, auto_now_add=True )
   updated = models.DateTimeField( editable=False, auto_now=True )
 
-  def available( self, quantity, interface_map ):
+  def available( self, site, quantity, interface_map ):
     return False
 
-  def allocate( job, buildresource, interface_map ):
+  def allocate( self, site, buildjob, buildresource, interface_map ):
     raise Exception( 'can not allocate a Base level Resource' )
 
   @property
@@ -87,8 +86,6 @@ class Resource( models.Model ):
 
   def clean( self, *args, **kwargs ):
     super().clean( *args, **kwargs )
-    self.key = '{0}_{1}'.format( self.site.name, self.name )
-
     errors = {}
 
     if errors:
@@ -97,12 +94,10 @@ class Resource( models.Model ):
   def __str__( self ):
     return 'Resource "{0}"'.format( self.name )
 
-  class Meta:
-    unique_together = ( 'name', 'site' )
-
 
 @cinp.model( not_allowed_verb_list=[ 'CREATE', 'DELETE', 'UPDATE', 'CALL' ] )
 class ResourceInstance( models.Model ):
+  site = models.ForeignKey( Site, on_delete=models.CASCADE )  # short cut, yeah we could look up the site with the contractor_structure_id
   contractor_structure_id = models.IntegerField( unique=True, blank=True, null=True )
   created = models.DateTimeField( editable=False, auto_now_add=True )
   updated = models.DateTimeField( editable=False, auto_now=True )
@@ -158,7 +153,13 @@ StaticResource
   group_name = models.CharField( max_length=50 )
   interface_map = MapField( blank=True )
 
-  def available( self, quantity, interface_map ):
+  def available( self, site, quantity, interface_map ):
+    if site not in self.sites:
+      return False
+
+    if self.staticresourceinstance_set.filter( site=site, buildjob__isnull=True ).count() < quantity:
+      return False
+
     for name in interface_map.keys():
       try:  # we only care if the interfaces named in the config match the resource, extra interfaces on the resource are fine
         if interface_map[ name ][ 'network' ] != self.interface_map[ name ][ 'network' ]:
@@ -166,10 +167,13 @@ StaticResource
       except KeyError:
         return False
 
-    return self.staticresourceinstance_set.filter( buildjob__isnull=True ).count() >= quantity
+    return True
 
-  def allocate( job, buildresource, interface_map ):
-    pass
+  def allocate( self, site, buildjob, buildresource, interface_map ):  # TODO: do this!
+    if site not in self.sites:
+      raise ValueError( 'site "{0}" not in list of sites for this resource'.format( site ) )
+
+    # and more....
 
   @cinp.check_auth()
   @staticmethod
@@ -283,35 +287,41 @@ DynamicResource
       buildjob_resource.allocate()
       buildjob_resource.build()
 
-  def available( self, quantity, interface_map ):
-    if not interface_map:  # for now is {} when empty would be nice if it was also None, this will cover both
-      return _getAvailibleNetwork( self.site, quantity ) is not None
+  def available( self, site, quantity, interface_map ):
+    if site not in self.sites:
+      return False
+
+    if not interface_map:  # for now this is {} when empty would be nice if it was also None, this will cover both
+      return _getAvailibleNetwork( site, quantity ) is not None
 
     return True
 
-  def allocate( self, buildjob, buildresource, interface_map ):
-    use_prealloc = interface_map or buildresource.config_values  # no preallocation for non-default networks, and custom config might have values to tweek the build ie: cpu count
+  def allocate( self, site, buildjob, buildresource, interface_map ):
+    if site not in self.sites:
+      raise ValueError( 'site "{0}" not in list of sites for this resource'.format( site ) )
+
+    is_custom = interface_map or buildresource.config_values
 
     if not interface_map:
-      network = _getAvailibleNetwork( self.site, buildresource.quantity )  # yes, if we are getting only pre-allocated stuff, we are double counting the network ips, however we need ips for the new resources that are going to backfill
+      network = _getAvailibleNetwork( site, buildresource.quantity )  # yes, if we are getting only pre-allocated stuff, we are double counting the network ips, however we need ips for the new resources that are going to backfill
       interface_map = { 'eth0': { 'network_id': network.contractor_network_id, 'address_block_id': network.contractor_addressblock_id, 'is_primary': True } }
 
-    if use_prealloc:
+    if not is_custom:  # no preallocation for non-default networks, and custom config might have values to tweek the build ie: cpu count
+      # for pre-allocated stuff, we don't care about which site, we use what is there, the backfill will go to the targetd site, if a build wants a gurentee of all the resources being in the same stie, they will need to specify a network anyway
+      dynamic_resource_instance_list = DynamicResourceInstance.objects.filter( buildjobresourceinstance__buildjob__isnull=True, buildjobresourceinstance__blueprint=buildresource.blueprint, dynamic_resource=self ).order_by( 'pk' ).iterator()
+
+      for index in range( 0, buildresource.quantity ):
+        dynamic_resource_instance = next( dynamic_resource_instance_list, None )
+        if dynamic_resource_instance is not None:
+          self._takeOver( dynamic_resource_instance, buildjob, buildresource, index )
+        else:
+          self._createNew( interface_map, buildjob, buildresource, index )
+
+      self._replenish( interface_map, buildresource.blueprint, settings.BUILD_AHEAD_COUNT.get( buildresource.blueprint, 0 ) )
+
+    else:
       for index in range( 0, buildresource.quantity ):
         self._createNew( interface_map, buildjob, buildresource, index )
-
-      return
-
-    dynamic_resource_instance_list = DynamicResourceInstance.objects.filter( buildjobresourceinstance__buildjob__isnull=True, buildjobresourceinstance__blueprint=buildresource.blueprint, dynamic_resource=self ).order_by( 'pk' ).iterator()
-
-    for index in range( 0, buildresource.quantity ):
-      dynamic_resource_instance = next( dynamic_resource_instance_list, None )
-      if dynamic_resource_instance is not None:
-        self._takeOver( dynamic_resource_instance, buildjob, buildresource, index )
-      else:
-        self._createNew( interface_map, buildjob, buildresource, index )
-
-    self._replenish( interface_map, buildresource.blueprint, settings.BUILD_AHEAD_COUNT.get( buildresource.blueprint, 0 ) )
 
   @cinp.check_auth()
   @staticmethod
@@ -338,7 +348,7 @@ class DynamicResourceInstance( ResourceInstance ):
 DynamicResourceInstance
   """
   dynamic_resource = models.ForeignKey( DynamicResource, on_delete=models.PROTECT )  # this is protected so we don't leave VMs laying arround
-  contractor_foundation_id = models.CharField( max_length=100, blank=True, null=True )  # should match foundation locator
+  contractor_foundation_id = models.CharField( unique=True, max_length=100, blank=True, null=True )  # should match foundation locator
   interface_map = MapField()
 
   @property
@@ -354,7 +364,7 @@ DynamicResourceInstance
         interface_map[ interface ][ 'address_block_id' ] = network.contractor_addressblock_id
 
     contractor = getContractor()
-    self.contractor_foundation_id, self.contractor_structure_id = contractor.allocateDynamicResource( self.dynamic_resource.site.name, self.dynamic_resource.complex_id, blueprint, config_values, interface_map, hostname )
+    self.contractor_foundation_id, self.contractor_structure_id = contractor.allocateDynamicResource( self.site.name, self.dynamic_resource.complex_id, blueprint, config_values, interface_map, hostname )
     self.full_clean()
     self.save()
 

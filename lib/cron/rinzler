@@ -176,15 +176,10 @@ def _makeBuild( build_name, project, manual ):
 
   try:
     build = project.build_set.get( name=build_name )
-    build.manual = manual
-    build.full_clean()
-    build.save()
-
-    for item in build.buildresource_set.all():  # TODO: update instead of delete and re-add
-      item.delete()
-
-    for item in build.builddependancy_set.all():
-      item.delete()
+    if manual != build.manual:
+      build.manual = manual
+      build.full_clean()
+      build.save()
 
   except Build.DoesNotExist:
     build = Build()
@@ -213,6 +208,21 @@ def _makeBuild( build_name, project, manual ):
   build.full_clean()
   build.save()
 
+  existing_resource_set = set( [ { 'resource': i.resource.name,
+                                   'blueprint': i.blueprint,
+                                   'name': i.name,
+                                   'quantity': i.quantity,
+                                   'interface_map': i.interface_map,
+                                   'config_values': i.config_values,
+                                   'auto_run': i.autorun } for i in build.buildresource_set.all() ] )
+
+  existing_dependancy_set = set( [ { 'name': i.package.name, 'tag': i.tag } for i in build.builddependancy_set.all() ] )
+
+  # TODO: go over the build resources and make sure any named network was defined
+  # TODO: go over the buildresource and make sure any ip address offsets are a part of a dedicated network
+  # TODO: any other saninity checks?
+
+  target_resource_list = []
   for resource in resource_list:
     ( name, data ) = resource.split( ':', 1 )
     try:
@@ -222,40 +232,66 @@ def _makeBuild( build_name, project, manual ):
       return 'Error parsing resource info: "{0}", killing the build'.format( data )
 
     if 'resource' not in data or 'blueprint' not in data:
-      return '"resource" and/or "blueprint" is missing from resource "{0}"'.format( name )
+      build.delete()
+      return '"resource" and/or "blueprint" is missing from resource "{0}", killing the build'.format( name )
 
     try:
-      resource = Resource.objects.get( name=data[ 'resource' ] )
+      Resource.objects.get( name=data[ 'resource' ] )
     except Resource.DoesNotExist:
       build.delete()
       return 'Resource "{0}" for build "{1}" does not exist, killing the build.'.format( data[ 'resource' ], build_name )
 
     if not _checkBluePrint( data[ 'blueprint' ] ):
-      return 'Blueprint "{0}" not found'.format( data[ 'blueprint' ] )
+      build.delete()
+      return 'Blueprint "{0}" not found, killing the build'.format( data[ 'blueprint' ] )
 
+    target_resource_list.append( {
+                                   'name': name,
+                                   'resource': data[ 'resource' ],
+                                   'blueprint': data[ 'blueprint' ],
+                                   'quantity': int( data.get( 'quantity', 1 ) ),
+                                   'interface_map': _cleanInterfaceMap( data.get( 'interface_map', {} ) ),
+                                   'config_values': data.get( 'config_values', {} ),
+                                   'auto_run': data.get( 'autorun', False )
+                                  } )
+
+  target_dependancy_list = []
+  for package_name, tag in package_map.items():
+    try:
+      Package.objects.get( name=package_name )
+    except Package.DoesNotExist:
+      build.delete()
+      return 'Package "{0}" for build "{1}" does not exist, killing the build.'.format( package_name, build_name )  # hopfully it was just created, but just in case
+
+    target_dependancy_list.append( { 'name': package_name, 'tag': tag } )
+
+  target_resource_set = set( target_resource_list )
+  target_dependancy_set = set( target_dependancy_list )
+
+  for resource in existing_resource_set - target_resource_set:
+    build.buildresource_set.get( name=resource[ 'name' ] ).delete()
+
+  for resource in target_resource_set - existing_resource_set:
     buildres = BuildResource()
     buildres.build = build
-    buildres.resource = resource
-    buildres.blueprint = data[ 'blueprint' ]
-    buildres.name = name
-    buildres.quantity = int( data.get( 'quantity', 1 ) )
-    buildres.interface_map = _cleanInterfaceMap( data.get( 'interface_map', {} ) )
-    buildres.config_values = data.get( 'config_values', {} )
-    buildres.autorun = data.get( 'autorun', False )
+    buildres.resource = Resource.objects.get( name=resource[ 'resource' ] )
+    buildres.blueprint = resource[ 'blueprint' ]
+    buildres.name = resource[ 'name' ]
+    buildres.quantity = resource[ 'quantity' ]
+    buildres.interface_map = resource[ 'interface_map' ]
+    buildres.config_values = resource[ 'config_values' ]
+    buildres.autorun = resource[ 'auto_run' ]
     buildres.full_clean()
     buildres.save()
 
-  # TODO: go over the build resources and make sure any named network was defined
-  # TODO: go over the buildresource and make sure any ip address offsets are a part of a dedicated network
-  # TODO: any other saninity checks?
+  for dependancy in existing_dependancy_set - target_dependancy_set:
+    build.builddependancy_set.get( package__name=dependancy[ 'name' ], tag=dependancy[ 'tag' ] ).delete()
 
-  for package_name, tag in package_map.items():
-    package = Package.objects.get( name=package_name )
-
+  for dependancy in target_dependancy_set - existing_dependancy_set:
     builddep = BuildDependancy()
     builddep.build = build
-    builddep.package = package
-    builddep.tag = tag
+    builddep.package = Package.objects.get( name=dependancy[ 'name' ] )
+    builddep.tag = dependancy[ 'tag' ]
     builddep.full_clean()
     builddep.save()
 

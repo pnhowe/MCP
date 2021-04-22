@@ -127,11 +127,7 @@ if args.network_add_network:
     print( 'AddressBlock "{0}" not found on Contractor'.format( args.network_add_addressblock ) )
     sys.exit( 1 )
 
-  for item in contractor_network[ 'address_block_list' ]:
-    nab = contractor.cinp.get( item )
-    if nab[ 'address_block' ] == '/api/v1/Utilities/AddressBlock:{0}:'.format( args.network_add_addressblock ):
-      break
-  else:
+  if '/api/v1/Utilities/AddressBlock:{0}:'.format( args.network_add_addressblock ) not in contractor_network[ 'address_block_list' ]:
     print( 'No Linkage between AddressBlock "{0}" and Network "{1}"'.format( args.network_add_addressblock, args.network_add_network ) )
     sys.exit( 1 )
 
