@@ -45,7 +45,7 @@ class MapField( models.BinaryField ):
     kwargs[ 'editable' ] = self.editable
     return name, path, args, kwargs
 
-  def from_db_value( self, value, expression, connection ):
+  def from_db_value( self, value, expression, connection, context=None ):
     if value is None:
       return None
 
