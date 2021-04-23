@@ -13,34 +13,42 @@ from datetime import datetime, timezone
 from prettytable import PrettyTable
 
 from mcp.Project.models import Project, Build, BuildResource
-from mcp.Resource.models import Site, Network, DynamicResource
+from mcp.Resource.models import Site, Network, DynamicResource, DynamicResourceSite
 from mcp.lib.t3kton import getContractor
 
 parser = argparse.ArgumentParser( description='resource manager - add/remove sites, networks, resources' )
 task = parser.add_mutually_exclusive_group( required=True )
 
 task.add_argument( '--site-list', help='List the Curent Sites', action='store_true' )
-task.add_argument( '--site-add', help='Add a Site, this should be the site name on Contractor', action='store_true' )
-task.add_argument( '--site-remove', help='Remove a Site, this should be the site name in MCP', action='store_true' )
+task.add_argument( '--site-add', help='Add a Site, name is required, should be the site name on Contractor', action='store_true' )
+task.add_argument( '--site-remove', help='Remove a Site, this should be the site name in MCP', metavar='SITE NAME' )
 
 task.add_argument( '--network-list', help='List the Curent Networks in specified Site', action='store_true' )
-# parser.add_argument( '--network-add-network', help='Add a Network, this should be the network id on Contractor, requires site paramater, and network-add-addressblock', metavar='NETWORK ID' )
-# parser.add_argument( '--network-add-addressblock', help='Add a Network, this should be the address block id on Contractor, goes with network-add-network', metavar='ADDRESSBLOCK ID' )
-# parser.add_argument( '--network-add-monolithic', help='Add a Network, this flags a network as monolithic, ie: can only be used for one build at a time.', action='store_true' )
-#
-# parser.add_argument( '--network-remove', help='Remove a Network, this should be the network id in MCP', metavar='NETWORK NAME' )
+task.add_argument( '--network-add', help='Add a Network, site, network, and addresss-block are required', action='store_true' )
+task.add_argument( '--network-remove', help='Remove a Network, this should be the network name in MCP', metavar='NETWORK NAME' )
 
 task.add_argument( '--dynamic-resource-list', help='List the Curent Dynamic Resources', action='store_true' )
-# parser.add_argument( '--dynamic-resource-add', help='Add a Dynamic Resource, this should be the complex id on Contractor, requires site paramater', metavar='COMPLEX ID' )
-# parser.add_argument( '--dynamic-resource-add-name', help='Name to assign to the dynamic resource, if not specified the name will be the name of the complex (must be unique per site)', metavar='NAME' )
-# parser.add_argument( '--dynamic-resource-remove', help='Remove a Dynamic Resource, this should be the resource id in MCP', metavar='RESOURCE NAME' )
+task.add_argument( '--dynamic-resource-add', help='Add a Dynamic Resources, name and description are required', action='store_true' )
+task.add_argument( '--dynamic-resource-remove', help='Remove a Dynamic Resource, this should be the resource name in MCP', metavar='RESOURCE NAME' )
+
+task.add_argument( '--dynamic-resource-attach', help='Attach Site/Complex to a Dynamic Resource, name, site and complex are required', action='store_true'  )
+task.add_argument( '--dynamic-resource-detach', help='Detach Site/Complex from a Dynamic Resource, name and site are required', action='store_true'  )
+
+task.add_argument( '--dynamic-resource-build-ahead', help='Set the number of resources to build ahead, name, blueprint, and build-ahead-count, set count to 0 to remove', action='store_true'  )
 
 # this one is a hack and is temporary until the dynamic/bluprint/stuff mess is figured out
 task.add_argument( '--update-builtin', help='Add the blueprint to the Builtin project', metavar='BLUEPRINT NAME' )
 
 # arguments for various tasks
 parser.add_argument( '--name', help='Name of resource' )
+parser.add_argument( '--description', help='Description of resource' )
 parser.add_argument( '--site', help='Site for required operations', metavar='SITE NAME' )
+parser.add_argument( '--network', help='Network Contractor id for required operations', metavar='NETWORK ID' )
+parser.add_argument( '--address-block', help='Address Block Contractor id for required operations', metavar='ADDRESSBLOCK ID' )
+parser.add_argument( '--monolithic', help='Flag the Network as Monolithic', action='store_true' )
+parser.add_argument( '--complex', help='Complex Contractor id for required operations', metavar='COMPLEX ID' )
+parser.add_argument( '--blueprint', help='Blueprint of dynamic resource entries to pre-build' )
+parser.add_argument( '--build-ahead-count', help='Number of dynamic resource entries to pre-build', type=int, default=0 )
 
 parser.add_argument( '--json', help='Output lists as JSON instead of a table', action='store_true' )
 
@@ -70,13 +78,14 @@ if args.site_list or args.network_list or args.dynamic_resource_list:
 
     table.field_names = [ 'Name', 'Size', 'Monolithic', 'Contractor Address Block Id', 'Contractor Network Id' ]
     for network in Network.objects.filter( site=site ):
-      table.add_row( [ network.name, network.site, network.monolithic, network.contractor_addressblock_id, network.contractor_network_id ] )
+      table.add_row( [ network.name, network.site.name, network.monolithic, network.contractor_addressblock_id, network.contractor_network_id ] )
 
   if args.dynamic_resource_list:
-    table.field_names = [ 'Name', 'Description', 'Contractor Complex Id', 'Build Ahead Count', 'Site/Complex Map' ]
+    table.field_names = [ 'Name', 'Description', 'BluePrint/Build Ahead Count', 'Site/Complex Map' ]
     for resource in DynamicResource.objects.all():
-      site_complex = [ '{0}:{1}'.format( i.site.name, i.complex_id ) for i in resource.dynamicresourcesite.all() ]
-      table.add_row( [ resource.name, resource.description, resource.build_ahead_count, ' '.join( site_complex ) ] )
+      site_complex_list = [ '{0}:{1}'.format( i.site.name, i.complex_id ) for i in resource.dynamicresourcesite_set.all() ]
+      build_ahead_list = [ '{0}:{1}'.format( k, v ) for k, v in resource.build_ahead_count_map.items() ]
+      table.add_row( [ resource.name, resource.description, ' '.join( build_ahead_list ), ' '.join( site_complex_list ) ] )
 
   table.sortby = 'Name'
 
@@ -91,14 +100,26 @@ contractor = getContractor()
 
 # site operations
 if args.site_add:
+  if not args.name:
+    print( 'Name Required' )
+    sys.exit( 1 )
+
   try:
-    contractor_site = contractor.getSite( args.site_add )
+    Site.objects.get( name=args.name )
+    print( 'Site with Name "{0}" Already Exists'.format( args.name ) )
+    sys.exit( 1 )
+
+  except Site.DoesNotExist:
+    pass
+
+  try:
+    contractor_site = contractor.getSite( args.name )
   except cinp.client.NotFound:
-    print( 'Site "{0}" not found on Contractor'.format( args.site_add ) )
+    print( 'Site "{0}" not found on Contractor'.format( args.name ) )
     sys.exit( 1 )
 
   site = Site()
-  site.name = args.site_add
+  site.name = args.name
   site.full_clean()
   site.save()
 
@@ -117,42 +138,52 @@ if args.site_remove:
   sys.exit( 0 )
 
 # network operations
-if args.network_add_network:
-  if not args.network_add_addressblock:
-    print( '--network-add-addressblock required to add new network' )
-    sys.exit( 0 )
+if args.network_add:
+  if not site or not args.network or not args.address_block:
+    print( 'Site, Network, and Address Block Required' )
+    sys.exit( 1 )
 
   try:
-    contractor_network = contractor.getNetwork( args.network_add_network )
+    contractor_network = contractor.getNetwork( args.network )
   except cinp.client.NotFound:
-    print( 'Network "{0}" not found on Contractor'.format( args.network_add_network ) )
+    print( 'Network "{0}" not found on Contractor'.format( args.network ) )
     sys.exit( 1 )
 
   if contractor_network[ 'site' ].split( ':' )[1] != site.name:
-    print( 'Network "{0}" does not belong to site'.format( args.network_add_network ) )
+    print( 'Network "{0}" does not belong to site "{1}"'.format( args.network, args.site ) )
     sys.exit( 1 )
 
   try:
-    contractor_addressblock = contractor.getAddressBlock( args.network_add_addressblock )
+    contractor_addressblock = contractor.getAddressBlock( args.address_block )
   except cinp.client.NotFound:
-    print( 'AddressBlock "{0}" not found on Contractor'.format( args.network_add_addressblock ) )
+    print( 'AddressBlock "{0}" not found on Contractor'.format( args.address_block ) )
     sys.exit( 1 )
 
-  if '/api/v1/Utilities/AddressBlock:{0}:'.format( args.network_add_addressblock ) not in contractor_network[ 'address_block_list' ]:
-    print( 'No Linkage between AddressBlock "{0}" and Network "{1}"'.format( args.network_add_addressblock, args.network_add_network ) )
+  if '/api/v1/Utilities/AddressBlock:{0}:'.format( args.address_block ) not in contractor_network[ 'address_block_list' ]:
+    print( 'No Linkage between AddressBlock "{0}" and Network "{1}"'.format( args.address_block, args.network ) )
     sys.exit( 1 )
+
+  name = '{0}-{1}'.format( contractor_network[ 'name' ], contractor_addressblock[ 'name' ] )
+
+  try:
+    Network.objects.get( name=name )
+    print( 'Network for Network "{0}"({1}) Address Block "{2}"({3}) Already Exists'.format( contractor_network[ 'name' ], args.network, contractor_addressblock[ 'name' ], args.address_block ) )
+    sys.exit( 1 )
+
+  except Network.DoesNotExist:
+    pass
 
   network = Network()
   network.site = site
-  network.name = '{0}-{1}'.format( contractor_network[ 'name' ], contractor_addressblock[ 'name' ] )
-  network.contractor_network_id = args.network_add_network
-  network.contractor_addressblock_id = args.network_add_addressblock
-  network.monolithic = args.network_add_monolithic
+  network.name = name
+  network.contractor_network_id = args.network
+  network.contractor_addressblock_id = args.address_block
+  network.monolithic = args.monolithic
   network.size = contractor_addressblock[ 'size' ]
   network.full_clean()
   network.save()
 
-  print( 'Network for Network "{0}" and Addressblock "{1}" Created.'.format( args.network_add_network, args.network_add_addressblock ) )
+  print( 'Network for Network "{0}"({1}) Address Block "{2}"({3}) Created.'.format( contractor_network[ 'name' ], args.network, contractor_addressblock[ 'name' ], args.address_block ) )
   sys.exit( 0 )
 
 if args.network_remove:
@@ -168,21 +199,26 @@ if args.network_remove:
 
 # dynamic resource options
 if args.dynamic_resource_add:
-  try:
-    contractor_complex = contractor.getComplex( args.dynamic_resource_add )
-  except cinp.client.NotFound:
-    print( 'Complex "{0}" not found on Contractor'.format( args.dynamic_resource_add ) )
+  if not args.name or not args.description:
+    print( 'Name and Description Required' )
     sys.exit( 1 )
 
+  try:
+    DynamicResource.objects.get( name=args.name )
+    print( 'Dynamic Resource with Name "{0}" Already Exists'.format( args.name ) )
+    sys.exit( 1 )
+
+  except DynamicResource.DoesNotExist:
+    pass
+
   dynamic_resource = DynamicResource()
-  dynamic_resource.site = site
-  dynamic_resource.name = args.dynamic_resource_add_name if args.dynamic_resource_add_name else contractor_complex[ 'name' ]
-  dynamic_resource.description = '"{0}" complex in "{1}"'.format( contractor_complex[ 'name' ], site.name )
-  dynamic_resource.complex_id = args.dynamic_resource_add
+  dynamic_resource.name = args.name
+  dynamic_resource.description = args.description
+  dynamic_resource.build_ahead_count = args.build_ahead_count
   dynamic_resource.full_clean()
   dynamic_resource.save()
 
-  print( 'DynamicResource "{0}" Created.'.format( contractor_complex[ 'name' ] ) )
+  print( 'DynamicResource "{0}" Created.'.format( args.name ) )
   sys.exit( 0 )
 
 if args.dynamic_resource_remove:
@@ -194,6 +230,75 @@ if args.dynamic_resource_remove:
 
   dynamic_resource.delete()
   print( 'Dynamic Resource "{0}" deleted.'.format( args.dynamic_resource_remove ) )
+  sys.exit( 0 )
+
+if args.dynamic_resource_attach:
+  if not site or not name or not args.complex:
+    print( 'Name, Site, and Complex Required' )
+    sys.exit( 1 )
+
+  try:
+    dynamic_resource = DynamicResource.objects.get( name=args.name )
+  except DynamicResource.DoesNotExist:
+    print( 'Dynamic Resource "{0}" not found in MCP'.format( args.name ) )
+    sys.exit( 1 )
+
+  try:
+    contractor_complex = contractor.getComplex( args.complex )
+  except cinp.client.NotFound:
+    print( 'Complex "{0}" not found on Contractor'.format( args.complex ) )
+    sys.exit( 1 )
+
+  drs = DynamicResourceSite()
+  drs.DynamicResource = dynamic_resource
+  drs.site = site
+  drs.complex_id = args.complex
+  drs.full_clean()
+  drs.save()
+
+  print( 'Site "{0}" attached to Dynamic Resource "{1}" with Complex "{2}"'.format( site.name, dynamic_resource.name, args.complex ) )
+  sys.exit( 0 )
+
+if args.dynamic_resource_detach:
+  if not site or not name:
+    print( 'Name and Site Required' )
+    sys.exit( 1 )
+
+  try:
+    dynamic_resource = DynamicResource.objects.get( name=args.name )
+  except DynamicResource.DoesNotExist:
+    print( 'Dynamic Resource "{0}" not found in MCP'.format( args.name ) )
+    sys.exit( 1 )
+
+  try:
+    dynamic_resource.dynamicresourcesite_set.get( site=site ).delete()
+  except DynamicResourceSite.DoesNotExist:
+    print( 'Site "{0}" for Dynamic Resource "{1}" does not exist'.format( site.name, args.name ) )
+    sys.exit( 1 )
+
+  print( 'Site "{0}" detached from Dynamic Resource "{1}" does not exist'.format( site.name, args.name ) )
+  sys.exit( 0 )
+
+if args.dynamic_resource_build_ahead:
+  if not name or args.blueprint:
+    print( 'Name and BluePrint Required' )
+    sys.exit( 1 )
+
+  try:
+    dynamic_resource = DynamicResource.objects.get( name=args.name )
+  except DynamicResource.DoesNotExist:
+    print( 'Dynamic Resource "{0}" not found in MCP'.format( args.name ) )
+    sys.exit( 1 )
+
+  if args.build_ahead_count:
+    dynamic_resource.build_ahead_count_map[ args.blueprint ] = args.build_ahead_count
+  else:
+    try:
+      del dynamic_resource.build_ahead_count_map[ args.blueprint ]
+    except KeyError:
+      pass
+
+  print( 'Set blueprint "{0}" to count "{1}" in Dynamic Resource "{2}"'.format( args.blueprint, args.build_ahead_count, args.name ) )
   sys.exit( 0 )
 
 # the temporary hack

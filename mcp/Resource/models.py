@@ -246,7 +246,7 @@ class DynamicResource( Resource ):
   """
 DynamicResource
   """
-  build_ahead_count = models.IntegerField( default=0 )
+  build_ahead_count_map = MapField( blank=True, null=True )  # mabey we should have a blueprint model for this and for the allowed blueprints
   sites = models.ManyToManyField( Site, through='DynamicResourceSite' )
 
   def _takeOver( self, dynamic_resource_instance, buildjob, buildresource, index ):
@@ -290,7 +290,7 @@ DynamicResource
   def _replenish( self, site, interface_map, blueprint ):
     BuildJobResourceInstance = apps.get_model( 'Processor', 'BuildJobResourceInstance' )
 
-    quantity = self.build_ahead_count - self.dynamicresourceinstance_set.filter( buildjobresourceinstance__buildjob__isnull=True, buildjobresourceinstance__blueprint=blueprint ).count()
+    quantity = self.build_ahead_count_map.get( blueprint, 0 ) - self.dynamicresourceinstance_set.filter( buildjobresourceinstance__buildjob__isnull=True, buildjobresourceinstance__blueprint=blueprint ).count()
     if quantity < 1:
       return
 
