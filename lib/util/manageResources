@@ -10,6 +10,7 @@ import sys
 import argparse
 import cinp
 from datetime import datetime, timezone
+from prettytable import PrettyTable
 
 from mcp.Project.models import Project, Build, BuildResource
 from mcp.Resource.models import Site, Network, DynamicResource
@@ -34,6 +35,8 @@ parser.add_argument( '--dynamic-resource-add', help='Add a Dynamic Resource, thi
 parser.add_argument( '--dynamic-resource-add-name', help='Name to assign to the dynamic resource, if not specified the name will be the name of the complex (must be unique per site)', metavar='NAME' )
 parser.add_argument( '--dynamic-resource-remove', help='Remove a Dynamic Resource, this should be the resource id in MCP', metavar='RESOURCE NAME' )
 
+parser.add_argument( '--json', help='Output lists as JSON instead of a table', action='store_true' )
+
 # this one is a hack and is temporary until the dynamic/bluprint/stuff mess is figured out
 parser.add_argument( '--update-builtin', help='Add the blueprint to the Builtin project', metavar='BLUEPRINT NAME' )
 
@@ -48,33 +51,38 @@ if args.site:
     sys.exit( 1 )
 
 # list operations
-if args.site_list:
-  print( 'Name' )
-  print( '----' )
-  for site in Site.objects.all().order_by( 'pk' ):
-    print( site.name )
+if args.site_list or args.network_list or args.dynamic_resource_list:
+  table = PrettyTable()
+  table.sortby = 'Name'
+  if args.site_list:
+    table.field_names = [ 'Name' ]
+    for site in Site.objects.all().order_by( 'pk' ):
+      table.add_row( [ site.name ] )
 
-  sys.exit( 0 )
+  if args.network_list:
+    if site is None:
+        print( 'Site Required' )
+        sys.exit( 1 )
 
-if ( args.network_list or args.dynamic_resource_list ) and site is None:
-  print( 'Site Required' )
-  sys.exit( 1 )
+    table.field_names = [ 'Name', 'Size', 'Monolithic', 'Contractor Address Block Id', 'Contractor Network Id' ]
+    for network in Network.objects.filter( site=site ):
+      table.add_row( [ network.name, network.site, network.monolithic, network.contractor_addressblock_id, network.contractor_network_id ] )
 
-if args.network_list:
-  print( 'Name     Size  Monolithic  Contractor Address Block  Contractor Network' )
-  print( '-----------------------------------------------------------------------' )
-  for network in Network.objects.filter( site=site ):
-    print( '{0}  {1}  {2}  {3}  {4}'.format( network.name, network.site, network.monolithic, network.contractor_addressblock_id, network.contractor_network_id ) )
+  if args.dynamic_resource_list:
+    table.field_names = [ 'Name', 'Description', 'Contractor Complex Id', 'Build Ahead Count', 'Site/Complex Map' ]
+    for resource in DynamicResource.objects.all():  # DynamicResourceSite
+      table.add_row( [ resource.name, resource.description, resource.build_ahead_count, resource.site_complex_map ] )
 
-  sys.exit( 0 )
+  # dynamicresource = models.ForeignKey( DynamicResource, on_delete=models.CASCADE )
+  # site = models.ForeignKey( Site, on_delete=models.CASCADE )
+  # complex_id = models.CharField( max_length=40 )  # should match contractor complex name/pk
 
-if args.dynamic_resource_list:
-  print( 'Name     Description      Contractor Id' )
-  print( '---------------------------------------' )
-  for resource in DynamicResource.objects.filter( site=site ):
-    print( '{0}  {1}  {2}'.format( resource.name, resource.description, resource.complex_id ) )
+  if args.json:
+    print( table.get_json_string() )
+  else:
+    print( table )
 
-  sys.exit( 0 )
+    sys.exit( 0 )
 
 contractor = getContractor()
 

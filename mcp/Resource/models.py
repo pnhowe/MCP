@@ -1,7 +1,7 @@
+import random
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.apps import apps
-from django.conf import settings
 
 from cinp.orm_django import DjangoCInP as CInP
 
@@ -54,10 +54,10 @@ Site
 @cinp.model( not_allowed_verb_list=[ 'CREATE', 'DELETE', 'UPDATE', 'CALL' ] )
 class Resource( models.Model ):
   name = models.CharField( max_length=50, primary_key=True )
-  sites = models.ManyToManyField( Site )
   description = models.CharField( max_length=100 )
   created = models.DateTimeField( editable=False, auto_now_add=True )
   updated = models.DateTimeField( editable=False, auto_now=True )
+  # allowed blueprint list?, verify in allocate and available
 
   def available( self, site, quantity, interface_map ):
     return False
@@ -97,7 +97,7 @@ class Resource( models.Model ):
 
 @cinp.model( not_allowed_verb_list=[ 'CREATE', 'DELETE', 'UPDATE', 'CALL' ] )
 class ResourceInstance( models.Model ):
-  site = models.ForeignKey( Site, on_delete=models.CASCADE )  # short cut, yeah we could look up the site with the contractor_structure_id
+  site = models.ForeignKey( Site, on_delete=models.PROTECT )  # short cut, yeah we could look up the site with the contractor_structure_id
   contractor_structure_id = models.IntegerField( unique=True, blank=True, null=True )
   created = models.DateTimeField( editable=False, auto_now_add=True )
   updated = models.DateTimeField( editable=False, auto_now=True )
@@ -150,6 +150,7 @@ class StaticResource( Resource ):
   """
 StaticResource
   """
+  sites = models.ManyToManyField( Site )
   group_name = models.CharField( max_length=50 )
   interface_map = MapField( blank=True )
 
@@ -157,7 +158,7 @@ StaticResource
     if site not in self.sites:
       return False
 
-    if self.staticresourceinstance_set.filter( site=site, buildjob__isnull=True ).count() < quantity:
+    if self.statieresourceinstance_set.filter( buildjobresourceinstance__buildjob__isnull=True, site=site ).order_by( 'pk' ).iterator().count() >= quantity:
       return False
 
     for name in interface_map.keys():
@@ -172,8 +173,26 @@ StaticResource
   def allocate( self, site, buildjob, buildresource, interface_map ):  # TODO: do this!
     if site not in self.sites:
       raise ValueError( 'site "{0}" not in list of sites for this resource'.format( site ) )
+    # initial stab at it
+    try:
+      static_resource_instance = random.choice( self.statieresourceinstance_set.filter( buildjobresourceinstance__buildjob__isnull=True, site=site ) )
+    except IndexError:
+      raise ValueError( 'no instances aviable' )
 
-    # and more....
+    BuildJobResourceInstance = apps.get_model( 'Processor', 'BuildJobResourceInstance' )
+    buildjob_resource = BuildJobResourceInstance()
+    buildjob_resource.buildjob = buildjob
+    buildjob_resource.resource_instance = static_resource_instance
+    buildjob_resource.name = buildresource.name
+    buildjob_resource.blueprint = buildresource.blueprint
+    buildjob_resource.config_values = buildresource.config_values
+    buildjob_resource.autorun = buildresource.autorun
+    buildjob_resource.full_clean()
+    buildjob_resource.save()
+
+    buildjob_resource.allocate()
+
+  # TODO: cleanup too?
 
   @cinp.check_auth()
   @staticmethod
@@ -227,8 +246,8 @@ class DynamicResource( Resource ):
   """
 DynamicResource
   """
-  # build_ahead_count = models.IntegerField( default=0 )
-  complex_id = models.CharField( max_length=40 )  # should match contractor complex name/pk
+  build_ahead_count = models.IntegerField( default=0 )
+  sites = models.ManyToManyField( Site, through='DynamicResourceSite' )
 
   def _takeOver( self, dynamic_resource_instance, buildjob, buildresource, index ):
     buildjob_resource = dynamic_resource_instance.buildjobresourceinstance
@@ -245,15 +264,19 @@ DynamicResource
     if buildjob_resource.state == 'built':  # there may be some triggers(autorun) that would of happened if this was built normally, do that now
       buildjob_resource.signal_built( buildjob_resource.cookie )
 
-  def _createNew( self, interface_map, buildjob, buildresource, index ):
+  def _createNew( self, site, interface_map, buildjob, buildresource, index ):
     BuildJobResourceInstance = apps.get_model( 'Processor', 'BuildJobResourceInstance' )
 
-    resource_instance = DynamicResourceInstance( dynamic_resource=self )
+    resource_instance = DynamicResourceInstance()
+    resource_instance.dynamic_resource = self
+    resource_instance.site = site
     resource_instance.interface_map = interface_map
     resource_instance.full_clean()
     resource_instance.save()
 
-    buildjob_resource = BuildJobResourceInstance( buildjob=buildjob, resource_instance=resource_instance )
+    buildjob_resource = BuildJobResourceInstance()
+    buildjob_resource.buildjob = buildjob
+    buildjob_resource.resource_instance = resource_instance
     buildjob_resource.name = buildresource.name
     buildjob_resource.index = index
     buildjob_resource.blueprint = buildresource.blueprint
@@ -264,20 +287,23 @@ DynamicResource
 
     buildjob_resource.allocate()
 
-  def _replenish( self, interface_map, blueprint, build_ahead_count ):
+  def _replenish( self, site, interface_map, blueprint ):
     BuildJobResourceInstance = apps.get_model( 'Processor', 'BuildJobResourceInstance' )
 
-    quantity = build_ahead_count - DynamicResourceInstance.objects.filter( buildjobresourceinstance__buildjob__isnull=True, buildjobresourceinstance__blueprint=blueprint, dynamic_resource=self ).count()
+    quantity = self.build_ahead_count - self.dynamicresourceinstance_set.filter( buildjobresourceinstance__buildjob__isnull=True, buildjobresourceinstance__blueprint=blueprint ).count()
     if quantity < 1:
       return
 
     for _ in range( 0, quantity ):
-      resource_instance = DynamicResourceInstance( dynamic_resource=self )
+      resource_instance = DynamicResourceInstance()
+      resource_instance.dynamic_resource = self
+      resource_instance.site = site
       resource_instance.interface_map = interface_map
       resource_instance.full_clean()
       resource_instance.save()
 
-      buildjob_resource = BuildJobResourceInstance( resource_instance=resource_instance )
+      buildjob_resource = BuildJobResourceInstance()
+      buildjob_resource.resource_instance = resource_instance
       buildjob_resource.name = 'prallocate'
       buildjob_resource.index = 0
       buildjob_resource.blueprint = blueprint
@@ -308,20 +334,20 @@ DynamicResource
 
     if not is_custom:  # no preallocation for non-default networks, and custom config might have values to tweek the build ie: cpu count
       # for pre-allocated stuff, we don't care about which site, we use what is there, the backfill will go to the targetd site, if a build wants a gurentee of all the resources being in the same stie, they will need to specify a network anyway
-      dynamic_resource_instance_list = DynamicResourceInstance.objects.filter( buildjobresourceinstance__buildjob__isnull=True, buildjobresourceinstance__blueprint=buildresource.blueprint, dynamic_resource=self ).order_by( 'pk' ).iterator()
+      dynamic_resource_instance_list = self.dynamicresourceinstance_set.filter( buildjobresourceinstance__buildjob__isnull=True, buildjobresourceinstance__blueprint=buildresource.blueprint ).order_by( 'pk' ).iterator()
 
       for index in range( 0, buildresource.quantity ):
         dynamic_resource_instance = next( dynamic_resource_instance_list, None )
         if dynamic_resource_instance is not None:
           self._takeOver( dynamic_resource_instance, buildjob, buildresource, index )
         else:
-          self._createNew( interface_map, buildjob, buildresource, index )
+          self._createNew( site, interface_map, buildjob, buildresource, index )
 
-      self._replenish( interface_map, buildresource.blueprint, settings.BUILD_AHEAD_COUNT.get( buildresource.blueprint, 0 ) )
+      self._replenish( site, interface_map, buildresource.blueprint )
 
     else:
       for index in range( 0, buildresource.quantity ):
-        self._createNew( interface_map, buildjob, buildresource, index )
+        self._createNew( site, interface_map, buildjob, buildresource, index )
 
   @cinp.check_auth()
   @staticmethod
@@ -340,6 +366,23 @@ DynamicResource
 
   def __str__( self ):
     return 'Resource "{0}"({1})'.format( self.description, self.name )
+
+
+@cinp.model()
+class DynamicResourceSite( models.Model ):
+  dynamicresource = models.ForeignKey( DynamicResource, on_delete=models.CASCADE )
+  site = models.ForeignKey( Site, on_delete=models.CASCADE )
+  complex_id = models.CharField( max_length=40 )  # should match contractor complex name/pk
+  updated = models.DateTimeField( editable=False, auto_now=True )
+  created = models.DateTimeField( editable=False, auto_now_add=True )
+
+  @cinp.check_auth()
+  @staticmethod
+  def checkAuth( user, verb, id_list, action=None ):
+    return True
+
+  def __str__( self ):
+    return 'DynamicResourceSite for DynamicResource "{0}" to Site "{1}" with complex "{2}"'.format( self.dynamicresource, self.site, self.complex_id )
 
 
 @cinp.model( not_allowed_verb_list=[ 'CREATE', 'DELETE', 'UPDATE' ] )
@@ -364,7 +407,7 @@ DynamicResourceInstance
         interface_map[ interface ][ 'address_block_id' ] = network.contractor_addressblock_id
 
     contractor = getContractor()
-    self.contractor_foundation_id, self.contractor_structure_id = contractor.allocateDynamicResource( self.site.name, self.dynamic_resource.complex_id, blueprint, config_values, interface_map, hostname )
+    self.contractor_foundation_id, self.contractor_structure_id = contractor.allocateDynamicResource( self.site.name, self.dynamic_resource.sites.get( site=self.site ).complex_id, blueprint, config_values, interface_map, hostname )
     self.full_clean()
     self.save()
 

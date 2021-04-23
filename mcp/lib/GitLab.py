@@ -98,11 +98,13 @@ class GitLab( SCM ):
     data[ 'context' ] = 'MCP Tests'
     if description is not None:
       data[ 'description' ] = description
+
     if coverage is not None:
       try:
         data[ 'coverage' ] = float( coverage )
       except ValueError:
         pass
+
     if target_url is not None:
       data[ 'target_url' ] = target_url
 
