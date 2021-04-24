@@ -97,7 +97,7 @@ class Resource( models.Model ):
 
 @cinp.model( not_allowed_verb_list=[ 'CREATE', 'DELETE', 'UPDATE', 'CALL' ] )
 class ResourceInstance( models.Model ):
-  site = models.ForeignKey( Site, on_delete=models.PROTECT )  # short cut, yeah we could look up the site with the contractor_structure_id
+  site = models.ForeignKey( Site, on_delete=models.PROTECT )
   contractor_structure_id = models.IntegerField( unique=True, blank=True, null=True )
   created = models.DateTimeField( editable=False, auto_now_add=True )
   updated = models.DateTimeField( editable=False, auto_now=True )
@@ -314,7 +314,7 @@ DynamicResource
       buildjob_resource.build()
 
   def available( self, site, quantity, interface_map ):
-    if site not in self.sites:
+    if site.name not in list( self.dynamicresourcesite_set.all().values_list( 'site', flat=True ) ):
       return False
 
     if not interface_map:  # for now this is {} when empty would be nice if it was also None, this will cover both
@@ -323,7 +323,7 @@ DynamicResource
     return True
 
   def allocate( self, site, buildjob, buildresource, interface_map ):
-    if site not in self.sites:
+    if site.name not in list( self.dynamicresourcesite_set.all().values_list( 'site', flat=True ) ):
       raise ValueError( 'site "{0}" not in list of sites for this resource'.format( site ) )
 
     is_custom = interface_map or buildresource.config_values
@@ -407,7 +407,7 @@ DynamicResourceInstance
         interface_map[ interface ][ 'address_block_id' ] = network.contractor_addressblock_id
 
     contractor = getContractor()
-    self.contractor_foundation_id, self.contractor_structure_id = contractor.allocateDynamicResource( self.site.name, self.dynamic_resource.sites.get( site=self.site ).complex_id, blueprint, config_values, interface_map, hostname )
+    self.contractor_foundation_id, self.contractor_structure_id = contractor.allocateDynamicResource( self.site.name, self.dynamic_resource.dynamicresourcesite_set.get( site=self.site ).complex_id, blueprint, config_values, interface_map, hostname )
     self.full_clean()
     self.save()
 

@@ -208,15 +208,16 @@ def _makeBuild( build_name, project, manual ):
   build.full_clean()
   build.save()
 
-  existing_resource_set = set( [ { 'resource': i.resource.name,
-                                   'blueprint': i.blueprint,
-                                   'name': i.name,
-                                   'quantity': i.quantity,
-                                   'interface_map': i.interface_map,
-                                   'config_values': i.config_values,
-                                   'auto_run': i.autorun } for i in build.buildresource_set.all() ] )
+  existing_resource_set = set( [ json.dumps( { 'resource': i.resource.name,
+                                               'blueprint': i.blueprint,
+                                               'name': i.name,
+                                               'quantity': i.quantity,
+                                               'interface_map': i.interface_map,
+                                               'config_values': i.config_values,
+                                               'auto_run': i.autorun
+                                               }, sort_keys=True ) for i in build.buildresource_set.all() ] )  # json dump so this can be hashed and thus set ed
 
-  existing_dependancy_set = set( [ { 'name': i.package.name, 'tag': i.tag } for i in build.builddependancy_set.all() ] )
+  existing_dependancy_set = set( [ json.dumps( { 'name': i.package.name, 'tag': i.tag }, sort_keys=True ) for i in build.builddependancy_set.all() ] )
 
   # TODO: go over the build resources and make sure any named network was defined
   # TODO: go over the buildresource and make sure any ip address offsets are a part of a dedicated network
@@ -245,15 +246,14 @@ def _makeBuild( build_name, project, manual ):
       build.delete()
       return 'Blueprint "{0}" not found, killing the build'.format( data[ 'blueprint' ] )
 
-    target_resource_list.append( {
-                                   'name': name,
-                                   'resource': data[ 'resource' ],
-                                   'blueprint': data[ 'blueprint' ],
-                                   'quantity': int( data.get( 'quantity', 1 ) ),
-                                   'interface_map': _cleanInterfaceMap( data.get( 'interface_map', {} ) ),
-                                   'config_values': data.get( 'config_values', {} ),
-                                   'auto_run': data.get( 'autorun', False )
-                                  } )
+    target_resource_list.append( json.dumps( { 'resource': data[ 'resource' ],
+                                               'blueprint': data[ 'blueprint' ],
+                                               'name': name,
+                                               'quantity': int( data.get( 'quantity', 1 ) ),
+                                               'interface_map': _cleanInterfaceMap( data.get( 'interface_map', {} ) ),
+                                               'config_values': data.get( 'config_values', {} ),
+                                               'auto_run': data.get( 'autorun', False )
+                                               }, sort_keys=True ) )
 
   target_dependancy_list = []
   for package_name, tag in package_map.items():
@@ -263,15 +263,17 @@ def _makeBuild( build_name, project, manual ):
       build.delete()
       return 'Package "{0}" for build "{1}" does not exist, killing the build.'.format( package_name, build_name )  # hopfully it was just created, but just in case
 
-    target_dependancy_list.append( { 'name': package_name, 'tag': tag } )
+    target_dependancy_list.append( json.dumps( { 'name': package_name, 'tag': tag }, sort_keys=True ) )
 
   target_resource_set = set( target_resource_list )
   target_dependancy_set = set( target_dependancy_list )
 
   for resource in existing_resource_set - target_resource_set:
+    resource = json.loads( resource )
     build.buildresource_set.get( name=resource[ 'name' ] ).delete()
 
   for resource in target_resource_set - existing_resource_set:
+    resource = json.loads( resource )
     buildres = BuildResource()
     buildres.build = build
     buildres.resource = Resource.objects.get( name=resource[ 'resource' ] )
@@ -285,9 +287,11 @@ def _makeBuild( build_name, project, manual ):
     buildres.save()
 
   for dependancy in existing_dependancy_set - target_dependancy_set:
+    dependancy = json.loads( dependancy )
     build.builddependancy_set.get( package__name=dependancy[ 'name' ], tag=dependancy[ 'tag' ] ).delete()
 
   for dependancy in target_dependancy_set - existing_dependancy_set:
+    dependancy = json.loads( dependancy )
     builddep = BuildDependancy()
     builddep.build = build
     builddep.package = Package.objects.get( name=dependancy[ 'name' ] )

@@ -121,7 +121,7 @@ QueueItem
     network_map = {}
     other_ip_count = 0
 
-    site = Site.objects.all().order_by( '?' )[0]  # yeah we might guess and pick the wrong site, but it will get retried, we should do some site scoring and do that instead
+    site = Site.objects.all().order_by( '?' )[0]  # yeah we might guess and pick the wrong site (without resources), but it will get retried, we should do some site scoring and do that instead
 
     # first allocate the network(s)
     for name, item in self.build.network_map.items():
@@ -138,17 +138,17 @@ QueueItem
              break
 
         else:
-          missing_list.append( 'Network for "{0}" Not Available'.format( name ) )
+          missing_list.append( 'Network for "{0}" Not Available in site "{1}"'.format( name, site.name ) )
 
     if missing_list:
-      return ( list( set( missing_list ) ), None, None )
+      return ( list( set( missing_list ) ), None, None, None )
 
     # second allocate the resource(s)
     for buildresource in self.build.buildresource_set.all():
       quantity = buildresource.quantity
       resource = buildresource.resource.subclass
       if not resource.available( site, quantity, buildresource.interface_map ):
-        missing_list.append( 'Resource "{0}" Not Available'.format( resource.name ) )
+        missing_list.append( 'Resource "{0}" Not Available in site "{1}"'.format( resource.name, site.name ) )
 
       buildresource_list.append( buildresource )
 
@@ -157,7 +157,7 @@ QueueItem
           try:
             network_map[ item[ 'network' ] ]
           except KeyError:
-            missing_list.append( 'Network "{0}" Not Defined'.format( item[ 'network' ] ) )
+            missing_list.append( 'Network "{0}" Not Defined in site "{1}"'.format( item[ 'network' ], site.name ) )
 
         else:
           other_ip_count += quantity
@@ -170,12 +170,12 @@ QueueItem
            break
 
       else:
-        missing_list.append( 'Other Network Not Available' )
+        missing_list.append( 'Other Network Not Available in site "{0}"'.format( site.name ) )
 
     if missing_list:
-      return ( list( set( missing_list ) ), None, None )
+      return ( list( set( missing_list ) ), None, None, None )
 
-    return ( None, buildresource_list, network_map )
+    return ( None, buildresource_list, network_map, site )
 
   @staticmethod
   def inQueueBuild( build, branch, manual, priority, user, promotion=None ):

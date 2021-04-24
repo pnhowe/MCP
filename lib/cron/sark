@@ -55,7 +55,7 @@ for item in QueueItem.objects.all().order_by( '-priority' ):  # start with the b
   job = None
   try:
     # see if we can get the resources
-    ( missing_list, buildresource_list, network_map ) = item.allocateResources()
+    ( missing_list, buildresource_list, network_map, site ) = item.allocateResources()
     if missing_list:
       logging.info( 'Queue Item "{0}" waiting for "{1}"'.format( item, missing_list ) )
       item.resource_status_map = { 'resource': missing_list }
@@ -88,13 +88,13 @@ for item in QueueItem.objects.all().order_by( '-priority' ):  # start with the b
       for name in interface_map.keys():
         interface_map[ name ][ 'network' ] = network_map[ interface_map[ name ].get( 'network', '_OTHER_' ) ]
 
-      resource.allocate( job, buildresource, interface_map )
+      resource.allocate( site, job, buildresource, interface_map )
 
     job.buildResources()
-    logging.info( 'Starting Queue Item "{0}" as job "{1}"'.format( item, job.id ) )
+    logging.info( 'Starting Queue Item "{0}" as job "{1}" in site "{2}"'.format( item, job.id, site.name ) )
 
     # remove the queue Item
-    slack.post_message( 'Job {0} ( project: "{1}", build: "{2}", branch: "{3}", target: "{4}" ) for Queue Item {5} submitted.'.format( job.id, job.project.name, job.build.name, job.branch, job.target, item.id ), slack.INFO )
+    slack.post_message( 'Job {0} ( project: "{1}", build: "{2}", branch: "{3}", target: "{4}" ) for Queue Item {5} submitted in site "{6}".'.format( job.id, job.project.name, job.build.name, job.branch, job.target, item.id, site.name ), slack.INFO )
     item.delete()
 
   except Exception as e:

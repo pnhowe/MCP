@@ -233,7 +233,7 @@ if args.dynamic_resource_remove:
   sys.exit( 0 )
 
 if args.dynamic_resource_attach:
-  if not site or not name or not args.complex:
+  if not site or not args.name or not args.complex:
     print( 'Name, Site, and Complex Required' )
     sys.exit( 1 )
 
@@ -250,7 +250,7 @@ if args.dynamic_resource_attach:
     sys.exit( 1 )
 
   drs = DynamicResourceSite()
-  drs.DynamicResource = dynamic_resource
+  drs.dynamicresource = dynamic_resource
   drs.site = site
   drs.complex_id = args.complex
   drs.full_clean()
@@ -260,7 +260,7 @@ if args.dynamic_resource_attach:
   sys.exit( 0 )
 
 if args.dynamic_resource_detach:
-  if not site or not name:
+  if not site or not args.name:
     print( 'Name and Site Required' )
     sys.exit( 1 )
 
@@ -303,12 +303,8 @@ if args.dynamic_resource_build_ahead:
 
 # the temporary hack
 if args.update_builtin:
-  if site is None:
-    print( 'specify site' )
-    sys.exit( 1 )
-
   try:
-    resource = DynamicResource.objects.get( site=site )
+    resource = DynamicResource.objects.get()
   except DynamicResource.DoesNotExist:
     print( 'no dynamic resources found' )
     sys.exit( 1 )
