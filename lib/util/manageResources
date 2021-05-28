@@ -76,9 +76,9 @@ if args.site_list or args.network_list or args.dynamic_resource_list:
         print( 'Site Required' )
         sys.exit( 1 )
 
-    table.field_names = [ 'Name', 'Size', 'Monolithic', 'Contractor Address Block Id', 'Contractor Network Id' ]
+    table.field_names = [ 'Name', 'Size', 'Monolithic', 'Contractor Address Block Id', 'Contractor Network Id', 'In Use' ]
     for network in Network.objects.filter( site=site ):
-      table.add_row( [ network.name, network.site.name, network.monolithic, network.contractor_addressblock_id, network.contractor_network_id ] )
+      table.add_row( [ network.name, network.size, network.monolithic, network.contractor_addressblock_id, network.contractor_network_id, network.buildjob_set.count() != 0 ] )
 
   if args.dynamic_resource_list:
     table.field_names = [ 'Name', 'Description', 'BluePrint/Build Ahead Count', 'Site/Complex Map' ]
@@ -280,7 +280,7 @@ if args.dynamic_resource_detach:
   sys.exit( 0 )
 
 if args.dynamic_resource_build_ahead:
-  if not name or args.blueprint:
+  if not args.name or not args.blueprint:
     print( 'Name and BluePrint Required' )
     sys.exit( 1 )
 
@@ -298,6 +298,8 @@ if args.dynamic_resource_build_ahead:
     except KeyError:
       pass
 
+  dynamic_resource.full_clean()
+  dynamic_resource.save()
   print( 'Set blueprint "{0}" to count "{1}" in Dynamic Resource "{2}"'.format( args.blueprint, args.build_ahead_count, args.name ) )
   sys.exit( 0 )
 

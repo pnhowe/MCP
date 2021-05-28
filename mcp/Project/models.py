@@ -34,9 +34,9 @@ def _diffMarkDown( a, b ):
   for group in sm.get_grouped_opcodes( 3 ):
     for tag, i1, i2, j1, j2 in group:
       if tag == 'replace':
-        result += '\n\n---\n\n_Changed {0}:{1} -> {2}:{3}_\n'.format( i1, i2, j1, j2 )
+        result += '\n\n---\n\n_Changed {0}:{1}_\n'.format( i1, i2 )
         result += _markdownBlockQuote( a[ i1:i2 ] )
-        result += '\n\n_To {0}:{1} -> {2}:{3}_\n'.format( i1, i2, j1, j2 )
+        result += '\n\n_To {0}:{1}_\n'.format( j1, j2 )
         result += _markdownBlockQuote( b[ j1:j2 ] )
 
       elif tag == 'delete':

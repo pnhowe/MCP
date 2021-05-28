@@ -588,7 +588,7 @@ class BuildJobResourceInstance( models.Model ):
     self._config_values = value
 
   @cinp.action( paramater_type_list=[ 'String' ] )
-  def signal_built( self, cookie ):  # called from webhook
+  def signalBuilt( self, cookie ):  # called from webhook
     if self.cookie != cookie:
       return
 
@@ -606,7 +606,7 @@ class BuildJobResourceInstance( models.Model ):
     self.save()
 
   @cinp.action( paramater_type_list=[ 'String' ] )
-  def signal_destroyed( self, cookie ):  # called from webhook
+  def signalDestroyed( self, cookie ):  # called from webhook
     if self.cookie != cookie:
       return
 

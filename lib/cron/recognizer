@@ -218,7 +218,11 @@ for commit in Commit.objects.filter( done_at__isnull=True, test_at__isnull=False
       packagefile.save()
 
     slack.post_message( 'Tagging "{0}" with tag "{1}".'.format( commit.project.name, commit.version ), slack.INFO )
-    commit.tagVersion()
+    try:
+      commit.tagVersion()
+    except Exception as e:
+      logging.warn( 'Exception while Tagging "{0}" with "{1}": "{2}"'.format( commit.project.name, commit.version, e ) )
+      slack.post_message( 'Tagging "{0}" with tag "{1}" Failed.'.format( commit.project.name, commit.version ), slack.ERROR )
 
   slack.post_message( 'Commit "{0}" of "{1}", branch "{2}" Finished.'.format( commit.commit, commit.project.name, commit.branch ), slack.DONE )
   commit.done_at = datetime.now( timezone.utc )

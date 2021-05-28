@@ -131,10 +131,10 @@ class Contractor():
       raise Exception( 'structure or foundation must be specified' )
 
     if on_build:
-      data[ 'url' ] = '{0}/api/v1/Processor/BuildJobResourceInstance:{1}:(signal_built)'.format( settings.MCP_HOST, instance.pk )
+      data[ 'url' ] = '{0}/api/v1/Processor/BuildJobResourceInstance:{1}:(signalBuilt)'.format( settings.MCP_HOST, instance.pk )
       self.cinp.create( '/api/v1/PostOffice/StructureBox', data )
     else:
-      data[ 'url' ] = '{0}/api/v1/Processor/BuildJobResourceInstance:{1}:(signal_destroyed)'.format( settings.MCP_HOST, instance.pk )
+      data[ 'url' ] = '{0}/api/v1/Processor/BuildJobResourceInstance:{1}:(signalDestroyed)'.format( settings.MCP_HOST, instance.pk )
       self.cinp.create( '/api/v1/PostOffice/FoundationBox', data )
 
   def getNetworkUsage( self, id ):

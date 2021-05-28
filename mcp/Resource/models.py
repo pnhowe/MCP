@@ -262,7 +262,7 @@ DynamicResource
     buildjob_resource.updateConfig()
 
     if buildjob_resource.state == 'built':  # there may be some triggers(autorun) that would of happened if this was built normally, do that now
-      buildjob_resource.signal_built( buildjob_resource.cookie )
+      buildjob_resource.signalBuilt( buildjob_resource.cookie )
 
   def _createNew( self, site, interface_map, buildjob, buildresource, index ):
     BuildJobResourceInstance = apps.get_model( 'Processor', 'BuildJobResourceInstance' )
