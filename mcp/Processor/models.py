@@ -7,7 +7,7 @@ from django.core.exceptions import ValidationError
 
 from cinp.orm_django import DjangoCInP as CInP
 
-from mcp.fields import MapField, package_filename_regex, packagefile_regex, TAG_NAME_LENGTH, BLUEPRINT_NAME_LENGTH
+from mcp.fields import MapField, package_filename_regex, packagefile_regex, TAG_NAME_LENGTH, BLUEPRINT_NAME_LENGTH, BRANCH_NAME_LENGTH
 
 from mcp.Project.models import Build, Project, Commit
 from mcp.Resource.models import ResourceInstance, Network, Site
@@ -104,7 +104,7 @@ QueueItem
   """
   build = models.ForeignKey( Build, on_delete=models.CASCADE, editable=False )
   project = models.ForeignKey( Project, on_delete=models.CASCADE, editable=False )
-  branch = models.CharField( max_length=50 )
+  branch = models.CharField( max_length=BRANCH_NAME_LENGTH )
   target = models.CharField( max_length=50 )
   priority = models.IntegerField( default=50 )  # higher the value, higer the priority
   manual = models.BooleanField()  # if False, will not auto clean up, and will not block the project from updating/re-scaning for new jobs
@@ -262,7 +262,7 @@ BuildJob
   """
   build = models.ForeignKey( Build, on_delete=models.PROTECT, editable=False )  # don't delete Builds/projects when things are in flight
   project = models.ForeignKey( Project, on_delete=models.PROTECT, editable=False )
-  branch = models.CharField( max_length=50 )
+  branch = models.CharField( max_length=BRANCH_NAME_LENGTH )
   target = models.CharField( max_length=50 )
   build_name = models.CharField( max_length=50 )
   value_map = MapField( blank=True )  # for the job to store work values

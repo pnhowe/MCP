@@ -10,7 +10,7 @@ from django.conf import settings
 
 from cinp.orm_django import DjangoCInP as CInP
 
-from mcp.fields import MapField, name_regex, package_filename_regex, packagefile_regex, TAG_NAME_LENGTH, PACKAGE_FILENAME_LENGTH, BLUEPRINT_NAME_LENGTH
+from mcp.fields import MapField, name_regex, package_filename_regex, packagefile_regex, TAG_NAME_LENGTH, PACKAGE_FILENAME_LENGTH, BLUEPRINT_NAME_LENGTH, BRANCH_NAME_LENGTH
 from mcp.lib.InternalGit import InternalGit
 from mcp.lib.Git import Git
 from mcp.lib.GitHub import GitHub
@@ -149,7 +149,7 @@ class Project( models.Model ):
 This is a Generic Project
   """
   name = models.CharField( max_length=50, primary_key=True )
-  release_branch = models.CharField( max_length=100, default='master' )
+  release_branch = models.CharField( max_length=BRANCH_NAME_LENGTH, default='master' )
   local_path = models.CharField( max_length=150, null=True, blank=True, editable=False )
   build_counter = models.IntegerField( default=0 )
   last_checked = models.DateTimeField( default=datetime.min )
@@ -439,7 +439,7 @@ class Commit( models.Model ):
 A Single Commit of a Project
   """
   project = models.ForeignKey( Project, on_delete=models.CASCADE )
-  branch = models.CharField( max_length=50 )
+  branch = models.CharField( max_length=BRANCH_NAME_LENGTH )
   commit = models.CharField( max_length=45 )
   version = models.CharField( max_length=50, blank=True, null=True )
   lint_results = MapField( blank=True )

@@ -29,7 +29,7 @@ QUEUE_PRIORITY = 100
 logging.basicConfig()
 logger = logging.getLogger()
 handler = SysLogHandler( address='/dev/log', facility=SysLogHandler.LOG_DAEMON )
-handler.setFormatter( logging.Formatter( fmt='recognizer[%(process)d]: %(message)s' ) )
+handler.setFormatter( logging.Formatter( fmt='tron[%(process)d]: %(message)s' ) )
 logger.addHandler( handler )
 logging.info( 'Starting...' )
 if '-v' in sys.argv:

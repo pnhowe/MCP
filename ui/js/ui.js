@@ -562,7 +562,7 @@ function hashChange( event )
         for( var uri in data )
         {
           var item = data[ uri ];
-          promotionJobs.append( '<tr><td>' + item.packages + '</td><td>' + item.tag + '</td><td>' + item.created + '</td></tr>' );
+          promotionJobs.append( '<tr><td>' + item.tag + '</td><td>' + JSON.stringify( item.result_map ) + '</td><td>' + item.created + '</td></tr>' );
         }
       }
     ).fail(

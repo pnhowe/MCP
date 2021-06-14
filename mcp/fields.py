@@ -10,6 +10,7 @@ packagefile_regex = re.compile( r'/api/v2/Package/PackageFile:[0-9]+:')
 TAG_NAME_LENGTH = 10  # from packrat Attrib/models.py, length of the Tag name
 PACKAGE_FILENAME_LENGTH = 100  # something some where in packrat defines this?
 BLUEPRINT_NAME_LENGTH = 40  # from contractor Blueprint/models.py BluePrint name length
+BRANCH_NAME_LENGTH = 512  # from what I can tell git's limit is file sytem limited, github/gitlab see to have theirs set at 512
 
 
 def defaultdict():
