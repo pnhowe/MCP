@@ -60,14 +60,37 @@ class Contractor():
     self.createStructure( structure_id )
 
   def releaseDynamicResource( self, foundation_id, structure_id ):
+    structure = None
     try:
-      self.destroyStructure( structure_id )
+      structure = self.cinp.get( '/api/v1/Building/Structure:{0}:'.format( structure_id ) )
     except client.NotFound:
       pass
+
+    if structure is not None:
+      if structure[ 'state' ] == 'built':
+        self.destroyStructure( structure_id )
+      else:
+        self.deleteStructure( structure_id )
+        # return False ?
+
+    # TODO: this needs some thinking.... for the edge cases with the webhook and all
+    # need to look for jobs, if they exist, wait? stop the job?  also.... what happens when we
+    # pick up a pre-alloc that is still building.  There is also some logic the "release" methods in other places
+    # that need re-thinking to match
+
+    foundation = None
     try:
-      self.destroyFoundation( foundation_id )
-    except client.NotFound:
-      return False
+      foundation = self.cinp.get( '/api/v1/Building/Foundation:{0}:'.format( foundation_id ) )
+    except foundation.NotFound:
+      pass
+
+    if foundation is not None:
+      if foundation[ 'state' ] == 'built':
+        self.destroyFoundation( foundation_id )
+      else:
+        self.deleteFoundation( foundation_id )
+        # return False ?
+
     return True
 
   def deleteDynamicResource( self, foundation_id, structure_id ):
@@ -75,6 +98,7 @@ class Contractor():
        self.deleteStructure( structure_id )
     except client.NotFound:
       pass
+
     try:
       self.deleteFoundation( foundation_id )
     except client.NotFound:

@@ -136,9 +136,11 @@ for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=True,
 # Iterate over the Ran jobs
 for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False, reported_at__isnull=True, released_at__isnull=True ):
   if job.commit is not None:
+    logging.info( 'Signaling Complete to target "{0}" of build "{1}" for job "{2}".'.format( job.target, job.build.name, job.id ) )
     job.commit.signalComplete( job.target, job.build.name, job.succeeded )
 
   elif job.promotion is not None:
+    logging.info( 'Signaling Complete to promotion of build "{1}" for job "{0}".'.format( job.build, job.id ) )
     job.promotion.signalComplete( job.build, job.succeeded )
 
   else:
@@ -184,6 +186,7 @@ for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False
 
 # iterate over the Acknoledged jobs, and release the resources
 for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False, reported_at__isnull=False, acknowledged_at__isnull=False, released_at__isnull=True ):
+  logging.info( 'Releasing resources for job "{0}".'.format( job.id ) )
   job.releaseResources()
 
   # resources all released, set job to released
@@ -196,6 +199,7 @@ for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False
 
 # Iterate over released jobs that are at least CLEANUP_DELAY hours old and delete them
 for job in BuildJob.objects.filter( released_at__lt=( datetime.now( timezone.utc ) - timedelta( hours=CLEANUP_DELAY ) ) ):
+  logging.info( 'Deleting job "{0}".'.format( job.id ) )
   job.delete()
 
 

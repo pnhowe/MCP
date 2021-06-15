@@ -7,7 +7,7 @@ from django.core.exceptions import ValidationError
 
 from cinp.orm_django import DjangoCInP as CInP
 
-from mcp.fields import MapField, package_filename_regex, packagefile_regex, TAG_NAME_LENGTH, BLUEPRINT_NAME_LENGTH, BRANCH_NAME_LENGTH
+from mcp.fields import MapField, package_filename_regex, packagefile_regex, TAG_NAME_LENGTH, BLUEPRINT_NAME_LENGTH, BRANCH_NAME_LENGTH, BUILD_NAME_LENGTH
 
 from mcp.Project.models import Build, Project, Commit
 from mcp.Resource.models import ResourceInstance, Network, Site
@@ -264,7 +264,7 @@ BuildJob
   project = models.ForeignKey( Project, on_delete=models.PROTECT, editable=False )
   branch = models.CharField( max_length=BRANCH_NAME_LENGTH )
   target = models.CharField( max_length=50 )
-  build_name = models.CharField( max_length=50 )
+  build_name = models.CharField( max_length=BUILD_NAME_LENGTH )
   value_map = MapField( blank=True )  # for the job to store work values
   network_list = models.ManyToManyField( Network )
   resources = models.ManyToManyField( ResourceInstance, through='BuildJobResourceInstance' )
@@ -427,11 +427,11 @@ BuildJob
 
   def buildResources( self ):
     for instance in self.buildjobresourceinstance_set.all():
-        instance.build()
+      instance.build()
 
   def releaseResources( self ):
     for instance in self.buildjobresourceinstance_set.all():
-        instance.release()
+      instance.release()
 
   @property
   def instances_built( self ):
