@@ -49,8 +49,15 @@ tmp = open( PID_FILE, 'w' )
 tmp.write( '{0}\n'.format( os.getpid() ) )
 tmp.close()
 
-packrat = None
-slack = getSlack( 'recognizer' )
+try:
+  slack = getSlack( 'recognizer' )
+except Exception as e:
+  logging.exception( 'Exception "{0}" trying to connect to slack, try again later'.format( e ) )
+  os.unlink( PID_FILE )
+  logging.shutdown()
+  sys.exit( 0 )
+
+packrat = None  # need to catch packrat connection errors, like the others?
 
 # check for commits that need testing
 for commit in Commit.objects.filter( done_at__isnull=True, test_at__isnull=True ):

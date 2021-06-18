@@ -55,9 +55,10 @@ class Contractor():
 
     return ( self.cinp.uri.extractIds( foundation )[0], self.cinp.uri.extractIds( structure )[0] )
 
-  def buildDynamicResource( self, foundation_id, structure_id ):
+  def buildDynamicResource( self, foundation_id, structure_id=None ):
     self.createFoundation( foundation_id )
-    self.createStructure( structure_id )
+    if structure_id is not None:
+      self.createStructure( structure_id )
 
   def releaseDynamicResource( self, foundation_id, structure_id ):
     structure = None
@@ -147,19 +148,24 @@ class Contractor():
     data[ 'extra_data' ] = { 'cookie': instance.cookie }
     data[ 'type' ] = 'call'
 
+    box_url = None
     if foundation_id is not None:
       data[ 'foundation' ] = '/api/v1/Building/Foundation:{0}:'.format( foundation_id )
+      box_url = '/api/v1/PostOffice/FoundationBox'
+
     elif structure_id is not None:
       data[ 'structure' ] = '/api/v1/Building/Structure:{0}:'.format( structure_id )
+      box_url = '/api/v1/PostOffice/StructureBox'
+
     else:
       raise Exception( 'structure or foundation must be specified' )
 
     if on_build:
       data[ 'url' ] = '{0}/api/v1/Processor/BuildJobResourceInstance:{1}:(signalBuilt)'.format( settings.MCP_HOST, instance.pk )
-      self.cinp.create( '/api/v1/PostOffice/StructureBox', data )
     else:
       data[ 'url' ] = '{0}/api/v1/Processor/BuildJobResourceInstance:{1}:(signalDestroyed)'.format( settings.MCP_HOST, instance.pk )
-      self.cinp.create( '/api/v1/PostOffice/FoundationBox', data )
+
+    self.cinp.create( box_url, data )
 
   def getNetworkUsage( self, id ):
     return self.cinp.call( '/api/v1/Utilities/AddressBlock:{0}:(usage)'.format( id ), {} )

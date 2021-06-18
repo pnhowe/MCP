@@ -527,7 +527,8 @@ class BuildJobResourceInstance( models.Model ):
   resource_instance = models.OneToOneField( ResourceInstance, blank=True, null=True, on_delete=models.SET_NULL )
   blueprint = models.CharField( max_length=BLUEPRINT_NAME_LENGTH )
   _config_values = MapField( blank=True )
-  autorun = models.BooleanField( default=False )
+  auto_run = models.BooleanField( default=False )
+  auto_provision = models.BooleanField( default=True )
   cookie = models.CharField( max_length=36, default=getCookie )  # blank=True, null=True, editable=False ?
   # build info
   name = models.CharField( max_length=50, blank=True, null=True  )
@@ -595,7 +596,7 @@ class BuildJobResourceInstance( models.Model ):
     if self.state not in ( 'new', 'allocated', 'building' ):  # allready moved on, don't touch
       return
 
-    if self.autorun:
+    if self.auto_run:
       self.state = 'ran'
       self.success = True
 

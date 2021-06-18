@@ -63,8 +63,14 @@ tmp = open( PID_FILE, 'w' )
 tmp.write( '{0}\n'.format( os.getpid() ) )
 tmp.close()
 
-slack = getSlack( 'rinzler' )
-contractor = getContractor()
+try:
+  slack = getSlack( 'rinzler' )
+  contractor = getContractor()
+except Exception as e:
+  logging.exception( 'Exception "{0}" trying to connect to contractor and or slack, try again later'.format( e ) )
+  os.unlink( PID_FILE )
+  logging.shutdown()
+  sys.exit( 0 )
 
 
 def _checkBluePrint( blueprint ):
@@ -214,7 +220,8 @@ def _makeBuild( build_name, project, manual ):
                                                'quantity': i.quantity,
                                                'interface_map': i.interface_map,
                                                'config_values': i.config_values,
-                                               'auto_run': i.autorun
+                                               'auto_run': i.auto_run,
+                                               'auto_provision': i.auto_provision
                                                }, sort_keys=True ) for i in build.buildresource_set.all() ] )  # json dump so this can be hashed and thus set ed
 
   existing_dependancy_set = set( [ json.dumps( { 'name': i.package.name, 'tag': i.tag }, sort_keys=True ) for i in build.builddependancy_set.all() ] )
@@ -252,7 +259,8 @@ def _makeBuild( build_name, project, manual ):
                                                'quantity': int( data.get( 'quantity', 1 ) ),
                                                'interface_map': _cleanInterfaceMap( data.get( 'interface_map', {} ) ),
                                                'config_values': data.get( 'config_values', {} ),
-                                               'auto_run': data.get( 'autorun', False )
+                                               'auto_run': data.get( 'auto_run', False ),
+                                               'auto_provision': data.get( 'auto_provision', True )
                                                }, sort_keys=True ) )
 
   target_dependancy_list = []
@@ -282,7 +290,8 @@ def _makeBuild( build_name, project, manual ):
     buildres.quantity = resource[ 'quantity' ]
     buildres.interface_map = resource[ 'interface_map' ]
     buildres.config_values = resource[ 'config_values' ]
-    buildres.autorun = resource[ 'auto_run' ]
+    buildres.auto_run = resource[ 'auto_run' ]
+    buildres.auto_provision = resource[ 'auto_provision' ]
     buildres.full_clean()
     buildres.save()
 

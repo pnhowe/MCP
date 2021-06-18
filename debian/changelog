@@ -1,3 +1,11 @@
+mcp (0.24-1) bionic; urgency=medium
+
+  * added auto_provision option to resources
+  * fixes
+  * ui updates
+
+ -- Peter Howe <pnhowe@gmail.com>  Fri, 18 Jun 2021 16:04:44 -0600
+
 mcp (0.23-1) bionic; urgency=medium
 
   * Reworked Resources to bring back the static resource

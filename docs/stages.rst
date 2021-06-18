@@ -70,7 +70,7 @@ examples::
 
   integrationcheck-resources:
     echo controller:{ \"resource\": \"vm\", "\"blueprint\": \"ubuntu-xenial\", \"config_values\": { \"cpu_count\": 2 }, \"interface_map\": { \"eth0\": {}, \"eth1\": { \"network\": \"vmnet\", \"offset\": 10 } } }
-    echo esx01:{ \"resource\": \"server\", "\"blueprint\": \"esx\", \"autorun\": true, \"interface_map\": { \"vmnic0\": {}, \"vmnic1\": { \"network\": \"vmnet\", \"offset\": 20 } } }
+    echo esx01:{ \"resource\": \"server\", "\"blueprint\": \"esx\", \"auto_run\": true, \"interface_map\": { \"vmnic0\": {}, \"vmnic1\": { \"network\": \"vmnet\", \"offset\": 20 } } }
 
 - <build>-networks: echo a list of networks required for the build.  If not specified, the resources will be attached to
   and available network with the required number of ip addresses available.

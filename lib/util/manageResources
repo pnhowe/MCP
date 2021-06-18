@@ -328,7 +328,8 @@ if args.update_builtin:
   br = BuildResource( name=args.update_builtin, build=build, resource=resource )
   br.quantity = 1
   br.blueprint = args.update_builtin
-  br.autorun = False
+  br.auto_run = False
+  br.auto_provision = True
   br.full_clean()
   br.save()
 

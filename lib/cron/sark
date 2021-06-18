@@ -47,8 +47,13 @@ tmp = open( PID_FILE, 'w' )
 tmp.write( '{0}\n'.format( os.getpid() ) )
 tmp.close()
 
-slack = getSlack( 'sark' )
-
+try:
+  slack = getSlack( 'sark' )
+except Exception as e:
+  logging.exception( 'Exception "{0}" trying to connect to slack, try again later'.format( e ) )
+  os.unlink( PID_FILE )
+  logging.shutdown()
+  sys.exit( 0 )
 
 # Iterate over the Queued Items
 for item in QueueItem.objects.all().order_by( '-priority' ):  # start with the biggest number first

@@ -907,7 +907,8 @@ class BuildResource( models.Model ):
   blueprint = models.CharField( max_length=BLUEPRINT_NAME_LENGTH )
   config_values = MapField( blank=True )
   quantity = models.IntegerField( default=1 )
-  autorun = models.BooleanField( default=False )
+  auto_run = models.BooleanField( default=False )
+  auto_provision = models.BooleanField( default=True )
   interface_map = MapField( blank=True )
 
   @cinp.check_auth()

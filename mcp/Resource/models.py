@@ -186,7 +186,8 @@ StaticResource
     buildjob_resource.name = buildresource.name
     buildjob_resource.blueprint = buildresource.blueprint
     buildjob_resource.config_values = buildresource.config_values
-    buildjob_resource.autorun = buildresource.autorun
+    buildjob_resource.auto_run = buildresource.auto_run
+    buildjob_resource.auto_provision = buildresource.auto_provision
     buildjob_resource.full_clean()
     buildjob_resource.save()
 
@@ -221,6 +222,9 @@ StaticResourceInstance
 
   def build( self ):
     contractor = getContractor()
+    if not self.auto_provision:
+      return
+
     contractor.builStaticResource( self.contractor_structure_id )
     contractor.registerWebHook( self.buildjobresourceinstance, True, structure_id=self.contractor_structure_id )
 
@@ -255,13 +259,14 @@ DynamicResource
     buildjob_resource.name = buildresource.name
     buildjob_resource.index = index
     buildjob_resource.config_values = buildresource.config_values
-    buildjob_resource.autorun = buildresource.autorun
+    buildjob_resource.auto_run = buildresource.auto_run
+    buildjob_resource.auto_provision = buildresource.auto_provision
     buildjob_resource.full_clean()
     buildjob_resource.save()
 
     buildjob_resource.updateConfig()
 
-    if buildjob_resource.state == 'built':  # there may be some triggers(autorun) that would of happened if this was built normally, do that now
+    if buildjob_resource.state == 'built':  # there may be some triggers(auto_run) that would of happened if this was built normally, do that now
       buildjob_resource.signalBuilt( buildjob_resource.cookie )
 
   def _createNew( self, site, interface_map, buildjob, buildresource, index ):
@@ -281,7 +286,8 @@ DynamicResource
     buildjob_resource.index = index
     buildjob_resource.blueprint = buildresource.blueprint
     buildjob_resource.config_values = buildresource.config_values
-    buildjob_resource.autorun = buildresource.autorun
+    buildjob_resource.auto_run = buildresource.auto_run
+    buildjob_resource.auto_provision = buildresource.auto_provision
     buildjob_resource.full_clean()
     buildjob_resource.save()
 
@@ -413,8 +419,12 @@ DynamicResourceInstance
 
   def build( self ):
     contractor = getContractor()
-    contractor.buildDynamicResource( self.contractor_foundation_id, self.contractor_structure_id )
-    contractor.registerWebHook( self.buildjobresourceinstance, True, structure_id=self.contractor_structure_id )
+    if self.auto_provision:
+      contractor.buildDynamicResource( self.contractor_foundation_id, self.contractor_structure_id )
+      contractor.registerWebHook( self.buildjobresourceinstance, True, structure_id=self.contractor_structure_id )
+    else:
+      contractor.buildDynamicResource( self.contractor_foundation_id )
+      contractor.registerWebHook( self.buildjobresourceinstance, True, foundation_id=self.contractor_foundation_id )
 
   def release( self ):
     contractor = getContractor()
