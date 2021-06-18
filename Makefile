@@ -36,8 +36,8 @@ dist-clean: clean
 
 .PHONY:: all install version clean dist-clean
 
-test-distros:
-	echo ubuntu-bionic
+test-blueprints:
+	echo ubuntu-bionic-base
 
 test-requires:
 	echo flake8 python3-pip python3-django python3-psycopg2 python3-cinp python3-dev python3-pytest python3-pytest-cov python3-pytest-django python3-pytest-mock postgresql python3-github
@@ -54,10 +54,10 @@ lint:
 test:
 	py.test-3 -x --cov=mcp --cov-report html --cov-report term --ds=mcp.settings -vv mcp
 
-.PHONY:: test-distros test-requires lint test
+.PHONY:: test-blueprints test-requires lint test
 
-dpkg-distros:
-	echo ubuntu-bionic
+dpkg-blueprints:
+	echo ubuntu-bionic-base
 
 dpkg-requires:
 	echo dpkg-dev debhelper python3-dev python3-setuptools
@@ -69,10 +69,10 @@ dpkg:
 dpkg-file:
 	echo $(shell ls ../mcp_*.deb):bionic
 
-.PHONY:: dpkg-distros dpkg-requires dpkg-file
+.PHONY:: dpkg-blueprints dpkg-requires dpkg-file
 
-doc-distros:
-	echo ubuntu-bionic
+doc-blueprints:
+	echo ubuntu-bionic-base
 
 doc-requires:
 	echo mcp-helpers
@@ -92,7 +92,7 @@ docs/mcp.pdf:
 doc-file:
 	echo docs/mcp.pdf:34474541
 
-.PHONY:: doc-distros doc-requires doc doc-file
+.PHONY:: doc-blueprints doc-requires doc doc-file
 
 # builds
 auto-builds:
