@@ -1,4 +1,4 @@
-mcp (0.24-1) bionic; urgency=medium
+mcp (0.24.1-1) bionic; urgency=medium
 
   * added auto_provision option to resources
   * fixes
