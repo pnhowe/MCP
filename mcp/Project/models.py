@@ -10,7 +10,7 @@ from django.conf import settings
 
 from cinp.orm_django import DjangoCInP as CInP
 
-from mcp.fields import MapField, name_regex, package_filename_regex, packagefile_regex, TAG_NAME_LENGTH, PACKAGE_FILENAME_LENGTH, BLUEPRINT_NAME_LENGTH, BRANCH_NAME_LENGTH
+from mcp.fields import MapField, name_regex, package_filename_regex, packagefile_regex, TAG_NAME_LENGTH, PACKAGE_FILENAME_LENGTH, BLUEPRINT_NAME_LENGTH, BRANCH_NAME_LENGTH, BUILD_NAME_LENGTH
 from mcp.lib.InternalGit import InternalGit
 from mcp.lib.Git import Git
 from mcp.lib.GitHub import GitHub
@@ -442,6 +442,7 @@ A Single Commit of a Project
   branch = models.CharField( max_length=BRANCH_NAME_LENGTH )
   commit = models.CharField( max_length=45 )
   version = models.CharField( max_length=50, blank=True, null=True )
+  build_name = models.CharField( max_length=BUILD_NAME_LENGTH, blank=True, null=True )
   lint_results = MapField( blank=True )
   test_results = MapField( blank=True )
   build_results = MapField( blank=True )

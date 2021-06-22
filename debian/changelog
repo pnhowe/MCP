@@ -1,3 +1,10 @@
+mcp (0.25.1-1) bionic; urgency=medium
+
+  * moved build_name to commit
+  * reworked sending nullunit contractor, packrat, confluence config
+
+ -- Peter Howe <pnhowe@gmail.com>  Mon, 21 Jun 2021 21:14:37 -0600
+
 mcp (0.24.1-1) bionic; urgency=medium
 
   * added auto_provision option to resources

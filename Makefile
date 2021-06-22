@@ -71,8 +71,8 @@ dpkg-file:
 
 .PHONY:: dpkg-blueprints dpkg-requires dpkg-file
 
-doc-blueprints:
-	echo ubuntu-bionic-base
+#doc-blueprints:
+#	echo ubuntu-bionic-base
 
 doc-requires:
 	echo mcp-helpers

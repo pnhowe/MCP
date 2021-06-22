@@ -22,7 +22,6 @@ class Migration(migrations.Migration):
                 ('id', models.AutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('branch', models.CharField(max_length=512)),
                 ('target', models.CharField(max_length=50)),
-                ('build_name', models.CharField(max_length=540)),
                 ('value_map', mcp.fields.MapField(blank=True, default=mcp.fields.defaultdict, editable=True)),
                 ('built_at', models.DateTimeField(blank=True, editable=False, null=True)),
                 ('ran_at', models.DateTimeField(blank=True, editable=False, null=True)),

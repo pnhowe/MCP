@@ -7,7 +7,7 @@ from django.core.exceptions import ValidationError
 
 from cinp.orm_django import DjangoCInP as CInP
 
-from mcp.fields import MapField, package_filename_regex, packagefile_regex, TAG_NAME_LENGTH, BLUEPRINT_NAME_LENGTH, BRANCH_NAME_LENGTH, BUILD_NAME_LENGTH
+from mcp.fields import MapField, package_filename_regex, packagefile_regex, TAG_NAME_LENGTH, BLUEPRINT_NAME_LENGTH, BRANCH_NAME_LENGTH
 
 from mcp.Project.models import Build, Project, Commit
 from mcp.Resource.models import ResourceInstance, Network, Site
@@ -22,14 +22,6 @@ INSTANCE_STATE_LIST = ( 'new', 'allocated', 'building', 'built', 'ran', 'releasi
 def base_config_values():
   return {
            '>package_list': [ 'nullunit' ],
-           'packrat_host': 'http://packrat',
-           'packrat_proxy': '',
-           'confluence_host': 'http://confluence',
-           'confluence_proxy': '',
-           'nullunit_packrat_username': 'nullunit',
-           'nullunit_packrat_password': 'nullunit',  # TODO: generate a one time token for packrat/contractor/etc... probably have to have something like VAULT help with this
-           'nullunit_confluence_username': 'nullunit',
-           'nullunit_confluence_password': 'nullunit',
            'mcp_host': settings.MCP_HOST,
            'mcp_proxy': ( settings.MCP_PROXY if settings.MCP_PROXY else '' )
          }
@@ -127,14 +119,14 @@ QueueItem
     for name, item in self.build.network_map.items():
       if item[ 'dedicated' ]:
         try:
-          network_map[ name ] = Network.objects.filter( monolithic=True, size__gte=item[ 'min_addresses' ], buildjob=None, site=site )[ 0 ].name
+          network_map[ name ] = Network.objects.filter( monolithic=True, size__gte=item[ 'min_addresses' ], buildjob=None, site=site )[ 0 ]
         except IndexError:
           missing_list.append( 'Network for "{0}" Not Available'.format( name ) )
 
       else:
         for network in Network.objects.filter( monolithic=False, size__gte=item[ 'min_addresses' ], site=site ):
           if network.available( item[ 'min_addresses' ] ):
-             network_map[ name ] = network.name
+             network_map[ name ] = network
              break
 
         else:
@@ -164,9 +156,9 @@ QueueItem
 
     # lastly make sure we have the IPs
     if other_ip_count:
-      for network in Network.objects.filter( monolithic=False, size__gte=other_ip_count ).exclude( pk__in=network_map.items(), site=site ):
+      for network in Network.objects.filter( monolithic=False, size__gte=other_ip_count, site=site ).exclude( pk__in=network_map.items() ):
         if network.available( other_ip_count ):
-           network_map[ '_OTHER_' ] = network.name
+           network_map[ '_OTHER_' ] = network
            break
 
       else:
@@ -264,7 +256,6 @@ BuildJob
   project = models.ForeignKey( Project, on_delete=models.PROTECT, editable=False )
   branch = models.CharField( max_length=BRANCH_NAME_LENGTH )
   target = models.CharField( max_length=50 )
-  build_name = models.CharField( max_length=BUILD_NAME_LENGTH )
   value_map = MapField( blank=True )  # for the job to store work values
   network_list = models.ManyToManyField( Network )
   resources = models.ManyToManyField( ResourceInstance, through='BuildJobResourceInstance' )
@@ -561,7 +552,7 @@ class BuildJobResourceInstance( models.Model ):
       result.update( {
                        'mcp_job_id': self.buildjob.pk,
                        'mcp_instance_id': self.pk,
-                       'mcp_build_name': self.buildjob.build_name,
+                       'mcp_build_name': self.buildjob.commit.build_name,
                        'mcp_project_name': self.buildjob.project.name,
                        'mcp_instance_cookie': self.cookie,
                        'mcp_resource_name': self.name,

@@ -33,6 +33,7 @@ class Migration(migrations.Migration):
                 ('branch', models.CharField(max_length=512)),
                 ('commit', models.CharField(max_length=45)),
                 ('version', models.CharField(blank=True, max_length=50, null=True)),
+                ('build_name', models.CharField(max_length=540, blank=True, null=True)),
                 ('lint_results', mcp.fields.MapField(blank=True, default=mcp.fields.defaultdict, editable=True)),
                 ('test_results', mcp.fields.MapField(blank=True, default=mcp.fields.defaultdict, editable=True)),
                 ('build_results', mcp.fields.MapField(blank=True, default=mcp.fields.defaultdict, editable=True)),

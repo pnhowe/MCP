@@ -163,7 +163,7 @@ StaticResource
 
     for name in interface_map.keys():
       try:  # we only care if the interfaces named in the config match the resource, extra interfaces on the resource are fine
-        if interface_map[ name ][ 'network' ] != self.interface_map[ name ][ 'network' ]:
+        if interface_map[ name ][ 'network' ] != self.interface_map[ name ][ 'network' ].name:
           return False
       except KeyError:
         return False
@@ -222,7 +222,7 @@ StaticResourceInstance
 
   def build( self ):
     contractor = getContractor()
-    if not self.auto_provision:
+    if not self.buildjobresourceinstance.auto_provision:
       return
 
     contractor.builStaticResource( self.contractor_structure_id )
@@ -408,9 +408,8 @@ DynamicResourceInstance
     interface_map = self.interface_map
     for interface in interface_map.keys():
       if 'network_id' not in interface_map[ interface ]:
-        network = Network.objects.get( name=interface_map[ interface ][ 'network'] )
-        interface_map[ interface ][ 'network_id' ] = network.contractor_network_id
-        interface_map[ interface ][ 'address_block_id' ] = network.contractor_addressblock_id
+        interface_map[ interface ][ 'network_id' ] = interface_map[ interface ][ 'network' ].contractor_network_id
+        interface_map[ interface ][ 'address_block_id' ] = interface_map[ interface ][ 'network' ].contractor_addressblock_id
 
     contractor = getContractor()
     self.contractor_foundation_id, self.contractor_structure_id = contractor.allocateDynamicResource( self.site.name, self.dynamic_resource.dynamicresourcesite_set.get( site=self.site ).complex_id, blueprint, config_values, interface_map, hostname )
@@ -419,7 +418,7 @@ DynamicResourceInstance
 
   def build( self ):
     contractor = getContractor()
-    if self.auto_provision:
+    if self.buildjobresourceinstance.auto_provision:
       contractor.buildDynamicResource( self.contractor_foundation_id, self.contractor_structure_id )
       contractor.registerWebHook( self.buildjobresourceinstance, True, structure_id=self.contractor_structure_id )
     else:

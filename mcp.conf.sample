@@ -1,8 +1,3 @@
-CONTRACTOR_HOST = 'http://contractor'
-CONTRACTOR_PROXY = None
-CONTRACTOR_USERNAME = 'mcp'
-CONTRACTOR_PASSWORD = 'mcp'
-
 GIT_LOCAL_PATH = '/var/www/git'
 GIT_HOST = 'http://git/'
 # to set a http_proxy for git use `git config --system http.proxy <http proxy>`
@@ -18,10 +13,29 @@ GITLAB_USERNAME = ''
 GITLAB_PRIVATE_TOKEN = ''
 GITLAB_PROXY = None
 
+CONTRACTOR_HOST = 'http://contractor'
+CONTRACTOR_PROXY = None
+CONTRACTOR_USERNAME = 'mcp'
+CONTRACTOR_PASSWORD = 'mcp'
+
 PACKRAT_HOST = 'http://packrat'
-PACKRAT_PROXY = None
 PACKRAT_USERNAME = 'mcp'
 PACKRAT_PASSWORD = 'mcp'
+
+CONFLUENCE_HOST = 'http://confluence'
+CONFLUENCE_USERNAME = 'mcp'
+CONFLUENCE_PASSWORD = 'mcp'
+
+# for nullunit
+# nullunit will use the same proxy for Contractor, Packrat and Confluence as it uses to get to MCP
+CONTRACTOR_NULLUNIT_USERNAME = 'nullunit'
+CONTRACTOR_NULLUNIT_PASSWORD = 'nullunit'
+
+PACKRAT_NULLUNIT_USERNAME = 'nullunit'
+PACKRAT_NULLUNIT_PASSWORD = 'nullunit'
+
+CONFLUENCE_NULLUNIT_USERNAME = 'nullunit'
+CONFLUENCE_NULLUNIT_PASSWORD = 'nullunit'
 
 # optional: appends to the process name in slack messages, if there are multiple MCPs reporting to the same slack channel
 SITE_NAME = None

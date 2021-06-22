@@ -27,31 +27,43 @@ class Contractor():
 
   def allocateDynamicResource( self, site_id, complex_id, blueprint_id, config_values, interface_map, hostname ):
     complex_uri = '/api/v1/Building/Complex:{0}:'.format( complex_id )
-    interface_map_list = [ { 'name': name, 'network_id': interface[ 'network_id' ] } for name, interface in interface_map.items() ]
-    foundation = self.cinp.call( '{0}(createFoundation)'.format( complex_uri ), { 'hostname': hostname, 'interface_map_list': interface_map_list, 'site': '/api/v1/Site/Site:{0}:'.format( site_id ) } )
+    foundation = None
+    structure = None
+    try:
+      interface_map_list = [ { 'name': name, 'network_id': interface[ 'network_id' ] } for name, interface in interface_map.items() ]
+      foundation = self.cinp.call( '{0}(createFoundation)'.format( complex_uri ), { 'hostname': hostname, 'interface_map_list': interface_map_list, 'site': '/api/v1/Site/Site:{0}:'.format( site_id ) } )
 
-    data = {}
-    data[ 'site' ] = '/api/v1/Site/Site:{0}:'.format( site_id )
-    data[ 'foundation' ] = '/api/v1/Building/Foundation:{0}:'.format( self.cinp.uri.extractIds( foundation )[0] )
-    data[ 'hostname' ] = hostname
-    data[ 'blueprint' ] = '/api/v1/BluePrint/StructureBluePrint:{0}:'.format( blueprint_id )
-    data[ 'config_values' ] = config_values
-    structure = self.cinp.create( '/api/v1/Building/Structure', data )[0]
-
-    for name, interface in interface_map.items():
       data = {}
-      data[ 'networked' ] = structure.replace( '/Building/Structure:', '/Utilities/Networked:' )
-      data[ 'interface_name' ] = name
-      data[ 'is_primary' ] = interface[ 'is_primary' ]
+      data[ 'site' ] = '/api/v1/Site/Site:{0}:'.format( site_id )
+      data[ 'foundation' ] = '/api/v1/Building/Foundation:{0}:'.format( self.cinp.uri.extractIds( foundation )[0] )
+      data[ 'hostname' ] = hostname
+      data[ 'blueprint' ] = '/api/v1/BluePrint/StructureBluePrint:{0}:'.format( blueprint_id )
+      data[ 'config_values' ] = config_values
+      structure = self.cinp.create( '/api/v1/Building/Structure', data )[0]
 
-      offset = interface.get( 'offset', None )
+      for name, interface in interface_map.items():
+        data = {}
+        data[ 'networked' ] = structure.replace( '/Building/Structure:', '/Utilities/Networked:' )
+        data[ 'interface_name' ] = name
+        data[ 'is_primary' ] = interface[ 'is_primary' ]
 
-      if offset is not None:
-        data[ 'offset' ] = offset
-        data[ 'address_block' ] = '/api/v1/Utilities/AddressBlock:{0}:'.format( interface[ 'address_block_id' ] )
-        self.cinp.create( '/api/v1/Utilities/Address', data )
-      else:
-        self.cinp.call( '/api/v1/Utilities/AddressBlock:{0}:(nextAddress)'.format( interface[ 'address_block_id' ] ), data )
+        offset = interface.get( 'offset', None )
+
+        if offset is not None:
+          data[ 'offset' ] = offset
+          data[ 'address_block' ] = '/api/v1/Utilities/AddressBlock:{0}:'.format( interface[ 'address_block_id' ] )
+          self.cinp.create( '/api/v1/Utilities/Address', data )
+        else:
+          self.cinp.call( '/api/v1/Utilities/AddressBlock:{0}:(nextAddress)'.format( interface[ 'address_block_id' ] ), data )
+
+    except Exception as e:
+      if structure is not None:
+        self.cinp.delete( structure )
+
+      if foundation is not None:
+        self.cinp.delete( foundation )
+
+      raise e
 
     return ( self.cinp.uri.extractIds( foundation )[0], self.cinp.uri.extractIds( structure )[0] )
 

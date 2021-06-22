@@ -57,6 +57,9 @@ except Exception as e:
 
 # Iterate over the Queued Items
 for item in QueueItem.objects.all().order_by( '-priority' ):  # start with the biggest number first
+  if 'error' in item.resource_status_map:  # skip items that had an error
+    continue
+
   job = None
   try:
     # see if we can get the resources
@@ -75,10 +78,6 @@ for item in QueueItem.objects.all().order_by( '-priority' ):  # start with the b
     job.build = item.build
     job.project = item.project
     job.branch = item.branch
-    if item.branch == item.project.release_branch:
-      job.build_name = str( item.project.build_counter )
-    else:
-      job.build_name = '{0}-{1}'.format( item.project.build_counter, item.branch )
     job.target = item.target
     job.commit = item.commit
     job.promotion = item.promotion

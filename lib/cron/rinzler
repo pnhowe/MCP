@@ -415,24 +415,29 @@ for project in Project.objects.all().order_by( 'last_checked' ):
       _failCommit( commit, 'No Makefile' )
       continue
 
-    make = Makefile( work_dir )
+    if branch == project.release_branch:
+      project.build_counter += 1
+      project.full_clean()
+      project.save()
+
+    if commit.branch == commit.project.release_branch:
+      commit.build_name = str( commit.project.build_counter )
+    else:
+      commit.build_name = '{0}-{1}'.format( commit.project.build_counter, commit.branch )
+
+    make = Makefile( work_dir, commit.build_name )
     if not make.lint():
       logging.error( 'Makefile does not lint, ignorning commit.' )
       _failCommit( commit, 'Makefile does not lint' )
       continue
 
     version = make.version()
-    if version is None:  # TODO: not ignore the version and just run the branch without tagging?
+    if version is None:
       logging.error( 'Unable to retrieve Version, ignorning commit.' )
       _failCommit( commit, 'Unable to retrieve Version' )
       continue
 
     commit.version = version
-
-    if branch == project.release_branch:
-      project.build_counter += 1
-      project.full_clean()
-      project.save()
 
     try:
       blueprint_list = make.testBluePrints()

@@ -20,15 +20,15 @@ class FakeProc:
 def test_lint( mocker ):
   popen = mocker.patch( 'subprocess.Popen' )
 
-  m = Makefile( 'testdir' )
+  m = Makefile( 'testdir', 'test_build' )
 
   popen.return_value = FakeProc( 0, '', '' )
   assert m.lint() is True
-  popen.assert_called_with( [ '/usr/bin/make', 'MCP=1', '-s', '-C', 'testdir', '-n' ], stderr=-2, stdout=-1 )
+  popen.assert_called_with( [ '/usr/bin/make', 'BUILD_NAME=test_build', 'MCP=1', '-s', '-C', 'testdir', '-n' ], stderr=-2, stdout=-1 )
 
   popen.return_value = FakeProc( 2, '', '' )
   assert m.lint() is False
-  popen.assert_called_with( [ '/usr/bin/make', 'MCP=1', '-s', '-C', 'testdir', '-n' ], stderr=-2, stdout=-1 )
+  popen.assert_called_with( [ '/usr/bin/make', 'BUILD_NAME=test_build', 'MCP=1', '-s', '-C', 'testdir', '-n' ], stderr=-2, stdout=-1 )
 
   popen.return_value = FakeProc( 1, '', '' )
   assert m.lint() is False
@@ -37,7 +37,7 @@ def test_lint( mocker ):
 def test_version( mocker ):
   popen = mocker.patch( 'subprocess.Popen' )
 
-  m = Makefile( 'testdir' )
+  m = Makefile( 'testdir', 'test_build' )
 
   popen.return_value = FakeProc( 0, '', '' )
   assert m.version() is None
@@ -55,7 +55,7 @@ def test_version( mocker ):
 def test_autoBuilds( mocker ):
   popen = mocker.patch( 'subprocess.Popen' )
 
-  m = Makefile( 'testdir' )
+  m = Makefile( 'testdir', 'test_build' )
 
   popen.return_value = FakeProc( 0, '', '' )
   assert m.autoBuilds() == []

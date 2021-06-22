@@ -36,11 +36,15 @@ class BlankTransaction():
 
 
 def contractorInfo():
-  return { 'host': settings.CONTRACTOR_HOST }
+  return { 'host': settings.CONTRACTOR_HOST, 'username': settings.CONTRACTOR_NULLUNIT_USERNAME, 'password': settings.CONTRACTOR_NULLUNIT_PASSWORD }
 
 
 def packratInfo():
-  return { 'host': settings.PACKRAT_HOST }
+  return { 'host': settings.PACKRAT_HOST, 'username': settings.PACKRAT_NULLUNIT_USERNAME, 'password': settings.PACKRAT_NULLUNIT_PASSWORD }
+
+
+def confluenceInfo():
+  return { 'host': settings.CONFLUENCE_HOST, 'username': settings.CONFLUENCE_NULLUNIT_USERNAME, 'password': settings.CONFLUENCE_NULLUNIT_PASSWORD  }
 
 
 def get_app( debug ):
@@ -54,6 +58,9 @@ def get_app( debug ):
   info.checkAuth = lambda user, verb, id_list: True
   config.addAction( info )
   info = Action( name='getPackratInfo', return_paramater=Paramater( type='Map' ), func=packratInfo )
+  info.checkAuth = lambda user, verb, id_list: True
+  config.addAction( info )
+  info = Action( name='getConfluenceInfo', return_paramater=Paramater( type='Map' ), func=confluenceInfo )
   info.checkAuth = lambda user, verb, id_list: True
   config.addAction( info )
 

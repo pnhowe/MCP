@@ -9,14 +9,15 @@ class MakeException( Exception ):
 
 
 class Makefile():
-  def __init__( self, dir ):
+  def __init__( self, dir, build_name ):
     self.dir = dir
+    self.build_name = build_name
 
   def _execute( self, target, do_split=True ):
     logging.info( 'makefile: executing target "{0}"'.format( target ) )
 
     try:
-      args = [ MAKE_CMD, 'MCP=1', '-s', '-C', self.dir, target ]
+      args = [ MAKE_CMD, 'BUILD_NAME={0}'.format( self.build_name ), 'MCP=1', '-s', '-C', self.dir, target ]
       logging.debug( 'makefile: executing "{0}"'.format( args ) )
       proc = subprocess.Popen( args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT )
       ( stdout, _ ) = proc.communicate()
