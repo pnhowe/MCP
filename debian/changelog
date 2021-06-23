@@ -1,3 +1,10 @@
+mcp (0.26.0-1) bionic; urgency=medium
+
+  * UI improvementds
+  * getHostDetail added to resource to get more info from Contractor
+
+ -- Peter Howe <pnhowe@gmail.com>  Wed, 23 Jun 2021 08:32:47 -0600
+
 mcp (0.25.1-1) bionic; urgency=medium
 
   * moved build_name to commit

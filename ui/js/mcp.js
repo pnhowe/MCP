@@ -345,7 +345,7 @@ var mcpBuilder = {};
     {
       var deferred = $.Deferred();
 
-      $.when( cinp.call( '/api/v1/Processor/BuildJobResourceInstance:' + instance_id + ':(getDetail)', { name: name } ) ).then(
+      $.when( cinp.call( '/api/v1/Processor/BuildJobResourceInstance:' + instance_id + ':(getHostDetail)', { name: name } ) ).then(
         function( data )
         {
           deferred.resolve( data.result );

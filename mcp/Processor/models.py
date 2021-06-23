@@ -9,6 +9,7 @@ from cinp.orm_django import DjangoCInP as CInP
 
 from mcp.fields import MapField, package_filename_regex, packagefile_regex, TAG_NAME_LENGTH, BLUEPRINT_NAME_LENGTH, BRANCH_NAME_LENGTH
 
+from mcp.lib.t3kton import getContractor
 from mcp.Project.models import Build, Project, Commit
 from mcp.Resource.models import ResourceInstance, Network, Site
 
@@ -382,11 +383,11 @@ BuildJob
   def getInstanceState( self, name=None ):
     result = {}
     if name is not None:
-      for instance in self.buildjobresourceinstance_set.all():
-        if instance.name != name:
-          continue
-
+      try:
+        instance = self.buildjobresourceinstance_set.get( name=name )
         result[ instance.index ] = instance.state
+      except BuildJobResourceInstance.DoesNotExist:
+        pass
 
     else:
       for instance in self.buildjobresourceinstance_set.all():
@@ -398,21 +399,21 @@ BuildJob
     return result
 
   @cinp.action( return_type='Map', paramater_type_list=[ 'String' ] )
-  def getInstanceDetail( self, name=None ):
+  def getInstanceStructureId( self, name=None ):
     result = {}
     if name is not None:
-      for instance in self.buildjobresourceinstance_set.all():
-        if instance.name != name:
-          continue
-
-        result[ instance.index ] = instance.getDetail()
+      try:
+        instance = self.buildjobresourceinstance_set.get( name=name )
+        result[ instance.index ] = instance.contractor_structure_id
+      except BuildJobResourceInstance.DoesNotExist:
+        pass
 
     else:
       for instance in self.buildjobresourceinstance_set.all():
         try:
-          result[ instance.name ][ instance.index ] = instance.getDetail()
+          result[ instance.name ][ instance.index ] = instance.contractor_structure_id
         except KeyError:
-          result[ instance.name ] = { instance.index: instance.getDetail() }
+          result[ instance.name ] = { instance.index: instance.contractor_structure_id }
 
     return result
 
@@ -552,7 +553,6 @@ class BuildJobResourceInstance( models.Model ):
       result.update( {
                        'mcp_job_id': self.buildjob.pk,
                        'mcp_instance_id': self.pk,
-                       'mcp_build_name': self.buildjob.commit.build_name,
                        'mcp_project_name': self.buildjob.project.name,
                        'mcp_instance_cookie': self.cookie,
                        'mcp_resource_name': self.name,
@@ -565,7 +565,8 @@ class BuildJobResourceInstance( models.Model ):
 
       if self.buildjob.commit is not None:
         result.update( {
-                         'mcp_commit_version': self.buildjob.commit.version
+                         'mcp_commit_version': self.buildjob.commit.version,
+                         'mcp_build_name': self.buildjob.commit.build_name
                         } )
 
       if self.buildjob.promotion is not None:
@@ -689,11 +690,24 @@ class BuildJobResourceInstance( models.Model ):
     self.buildjob.save()
 
   @cinp.action( return_type='Map' )
-  def getDetail( self ):  # Only called by ui.js, when nuillunitInterface get detail is working again, unify with this one
+  def getHostDetail( self ):
+    """
+    Get the Host detail, including info from Contractor, this is a bit expensive, use conservitivally.
+    """
+    contractor = getContractor()
+    config = contractor.getFullConfig( self.resource_instance.contractor_structure_id )
+
     result = {
                'structure_id': self.resource_instance.contractor_structure_id,
-               'hostname': self.hostname
+               'hostname': self.hostname,
+               'ip_address': config[ '_primary_address' ],
+               'config_uuid': config[ '_structure_config_uuid' ]
               }
+
+    try:
+      result[ 'foundation_id' ] = self.resource_instance.contractor_foundation_id
+    except AttributeError:
+      pass
 
     return result
 
@@ -746,7 +760,7 @@ class BuildJobResourceInstance( models.Model ):
       self.save()
       return
 
-    if self.state not in ( 'built', 'ran' ):
+    if self.state not in ( 'built', 'ran' ):  # pretty much the only state that will cause problems is "building", have to wait for the build to finish before cleaning up
       raise Exception( 'Can not release when not built' )
 
     if self.resource_instance is None:

@@ -117,6 +117,9 @@ class Contractor():
     except client.NotFound:
       pass
 
+  def getFullConfig( self, structure_id ):
+    return self.cinp.call( '/api/v1/Building/Structure:{0}:(getConfig)'.format( structure_id ) )
+
   def updateConfig( self, structure_id, config_values, hostname ):
     data = {}
     data[ 'config_values' ] = config_values

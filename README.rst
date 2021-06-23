@@ -66,3 +66,4 @@ Now we need to create the MCP user, on the contractor host::
   user.user_permissions.add( Permission.objects.get( codename='can_config_structure', content_type__app_label='Building' ) )
   user.user_permissions.add( Permission.objects.get( codename='add_structurebox', content_type__app_label='PostOffice' ) )
   user.user_permissions.add( Permission.objects.get( codename='add_foundationbox', content_type__app_label='PostOffice' ) )
+  user = User.objects.create_user('nullunit', 'nullunit@mcp.test', 'nullunit')
