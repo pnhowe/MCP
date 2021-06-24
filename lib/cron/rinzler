@@ -139,8 +139,8 @@ def _cleanInterfaceMap( interface_map ):
 
 
 def _makeBuild( build_name, project, manual ):
+  network_list = make.networks( build_name )  # if these have a makefile exception it should roll up
   resource_list = make.resources( build_name )
-  network_list = make.networks( build_name )
   if manual:
     logging.debug( 'Build: "{0}" resources: "{1}" networks: "{2}".'.format( build_name, resource_list, network_list ) )
   else:
@@ -311,8 +311,11 @@ def _makeBuild( build_name, project, manual ):
   return None
 
 
-def _failCommit( commit, message ):
-  commit.lint_results = { 'makefile': { 'success': False, 'status': 'Failed', 'results': message } }
+def _failCommit( commit, msg=None, exception=None ):
+  if exception is not None:
+    msg = str( exception )
+
+  commit.lint_results = { 'makefile': { 'success': False, 'status': 'Failed', 'results': msg } }
   commit.done_at = datetime.now( timezone.utc )
   commit.full_clean()
   commit.save()
@@ -426,24 +429,25 @@ for project in Project.objects.all().order_by( 'last_checked' ):
       commit.build_name = '{0}-{1}'.format( commit.project.build_counter, commit.branch )
 
     make = Makefile( work_dir, commit.build_name )
-    if not make.lint():
+    try:
+      make.lint()
+    except MakeException as e:
       logging.error( 'Makefile does not lint, ignorning commit.' )
-      _failCommit( commit, 'Makefile does not lint' )
+      _failCommit( commit, 'Makefile does not lint', e )
       continue
 
-    version = make.version()
-    if version is None:
+    try:
+      commit.version = make.version()
+    except MakeException as e:
       logging.error( 'Unable to retrieve Version, ignorning commit.' )
-      _failCommit( commit, 'Unable to retrieve Version' )
+      _failCommit( commit, 'Unable to retrieve Version', e )
       continue
-
-    commit.version = version
 
     try:
       blueprint_list = make.testBluePrints()
     except MakeException as e:
-      logging.error( 'Error Retreiving Test BluePrints from Makefile "{0}", ignorning commit.'.format( e ) )
-      _failCommit( commit, 'Error Retreiving Test BluePrints from Makefile' )
+      logging.error( 'Error Retreiving Test BluePrints from Makefile, ignorning commit.' )
+      _failCommit( commit, 'Error Retreiving Test BluePrints from Makefile', e )
       continue
 
     commit.lint_results = dict( zip( blueprint_list, [ dict() for _ in range( 0, len( blueprint_list ) ) ] ) )
@@ -456,8 +460,8 @@ for project in Project.objects.all().order_by( 'last_checked' ):
       try:
         blueprint_list = make.packageBluePrints( tmp )
       except MakeException as e:
-        logging.error( 'Error Retreiving Packaging BluePrints from Makefile "{0}", ignorning commit.'.format( e ) )
-        _failCommit( commit, 'Error Retreiving Packaging BluePrints from Makefile' )
+        logging.error( 'Error Retreiving Packaging BluePrints from Makefile, ignorning commit.' )
+        _failCommit( commit, 'Error Retreiving Packaging BluePrints from Makefile', e )
         continue
 
       if blueprint_list:
@@ -467,8 +471,10 @@ for project in Project.objects.all().order_by( 'last_checked' ):
       logging.info( 'Adding Doc Build...' )
       try:
         blueprint_list = make.docBluePrints()
-      except MakeException:
-        blueprint_list = []
+      except MakeException as e:
+        logging.error( 'Error Retreiving Documentation BluePrints from Makefile, ignorning commit.' )
+        _failCommit( commit, 'Error Retreiving Documentation BluePrints from Makefile', e )
+        continue
 
       commit.doc_results = dict( zip( blueprint_list, [ dict() for _ in range( 0, len( blueprint_list ) ) ] ) )
 
@@ -479,15 +485,15 @@ for project in Project.objects.all().order_by( 'last_checked' ):
       try:
         auto_build_list = make.autoBuilds()
       except MakeException as e:
-        logging.error( 'Error Retreiving Auto Builds from Makefile "{0}", ignorning commit.'.format( e ) )
-        _failCommit( commit, 'Error Retreiving Auto Builds from Makefile' )
+        logging.error( 'Error Retreiving Auto Builds from Makefile, ignorning commit.' )
+        _failCommit( commit, 'Error Retreiving Auto Builds from Makefile', e )
         continue
 
       try:
         manual_build_list = make.manualBuilds()
       except MakeException as e:
-        logging.error( 'Error Retreiving Manual Builds from Makefile "{0}", ignorning commit.'.format( e ) )
-        _failCommit( commit, 'Error Retreiving Manual Builds from Makefile' )
+        logging.error( 'Error Retreiving Manual Builds from Makefile, ignorning commit.' )
+        _failCommit( commit, 'Error Retreiving Manual Builds from Makefile', e )
         continue
 
       logging.debug( 'Auto Builds "{0}".'.format( auto_build_list ) )
@@ -518,9 +524,14 @@ for project in Project.objects.all().order_by( 'last_checked' ):
             _failCommit( commit, msg )  # TODO: should manual builds fail the commit?
             continue
 
+      except MakeException as e:
+        logging.exception( 'Makefile Error making build "{0}", ignorning commit.'.format( build ) )
+        _failCommit( commit, 'Makefile Error making build "{0}", ignorning commit.'.format( build ), e )
+        continue
+
       except Exception as e:
         logging.exception( 'Error making build "{0}": "{1}", ignorning commit.'.format( build, e ) )
-        _failCommit( commit, 'Error making build "{0}": "{1}", ignorning commit.'.format( build, e )  )
+        _failCommit( commit, 'Error making build "{0}": "{1}", ignorning commit.'.format( build, e ) )
         continue
 
     logging.debug( 'Cleaning up work dir.' )

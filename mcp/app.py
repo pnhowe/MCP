@@ -48,7 +48,7 @@ def confluenceInfo():
 
 
 def get_app( debug ):
-  app = WerkzeugServer( root_path='/api/v1/', root_version='0.10', debug=debug, get_user=getUser, cors_allow_list=[ '*' ], debug_dump_location=settings.DEBUG_DUMP_LOCATION )
+  app = WerkzeugServer( root_path='/api/v1/', root_version='0.11', debug=debug, get_user=getUser, cors_allow_list=[ '*' ], debug_dump_location=settings.DEBUG_DUMP_LOCATION )
 
   config = Model( name='config', field_list=[], transaction_class=BlankTransaction )
   config.checkAuth = lambda user, verb, id_list: True

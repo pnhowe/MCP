@@ -15,15 +15,15 @@ class Contractor():
     self.username = username
     self.cinp = client.CInP( host, '/api/v1/', proxy )
 
-    root = self.cinp.describe( '/api/v1/' )
+    root = self.cinp.describe( '/api/v1/', retry_count=10 )
     if root[ 'api-version' ] != CONTRACTOR_API_VERSION:
       raise Exception( 'Expected API version "{0}" found "{1}"'.format( CONTRACTOR_API_VERSION, root[ 'api-version' ] ) )
 
-    self.token = self.cinp.call( '/api/v1/Auth/User(login)', { 'username': self.username, 'password': password } )
+    self.token = self.cinp.call( '/api/v1/Auth/User(login)', { 'username': self.username, 'password': password }, retry_count=10 )
     self.cinp.setAuth( username, self.token )
 
   def logout( self ):
-    self.cinp.call( '/api/v1/Auth/User(logout)', { 'token': self.token } )
+    self.cinp.call( '/api/v1/Auth/User(logout)', { 'token': self.token }, retry_count=10 )
 
   def allocateDynamicResource( self, site_id, complex_id, blueprint_id, config_values, interface_map, hostname ):
     complex_uri = '/api/v1/Building/Complex:{0}:'.format( complex_id )
@@ -58,10 +58,10 @@ class Contractor():
 
     except Exception as e:
       if structure is not None:
-        self.cinp.delete( structure )
+        self.cinp.delete( structure, retry_count=10 )
 
       if foundation is not None:
-        self.cinp.delete( foundation )
+        self.cinp.delete( foundation, retry_count=10 )
 
       raise e
 
@@ -75,7 +75,7 @@ class Contractor():
   def releaseDynamicResource( self, foundation_id, structure_id ):
     structure = None
     try:
-      structure = self.cinp.get( '/api/v1/Building/Structure:{0}:'.format( structure_id ) )
+      structure = self.cinp.get( '/api/v1/Building/Structure:{0}:'.format( structure_id ), retry_count=10 )
     except client.NotFound:
       pass
 
@@ -93,7 +93,7 @@ class Contractor():
 
     foundation = None
     try:
-      foundation = self.cinp.get( '/api/v1/Building/Foundation:{0}:'.format( foundation_id ) )
+      foundation = self.cinp.get( '/api/v1/Building/Foundation:{0}:'.format( foundation_id ), retry_count=10 )
     except foundation.NotFound:
       pass
 
@@ -118,20 +118,20 @@ class Contractor():
       pass
 
   def getFullConfig( self, structure_id ):
-    return self.cinp.call( '/api/v1/Building/Structure:{0}:(getConfig)'.format( structure_id ) )
+    return self.cinp.call( '/api/v1/Building/Structure:{0}:(getConfig)'.format( structure_id ), {}, retry_count=10 )
 
   def updateConfig( self, structure_id, config_values, hostname ):
     data = {}
     data[ 'config_values' ] = config_values
     data[ 'hostname' ] = hostname
-    self.cinp.update( '/api/v1/Building/Structure:{0}:'.format( structure_id ), data )
+    self.cinp.update( '/api/v1/Building/Structure:{0}:'.format( structure_id ), data, retry_count=10 )
 
   def allocateStaticResource( self, structure_id, blueprint_id, config_values, hostname ):
     data = {}
     data[ 'blueprint' ] = '/api/v1/Blueprint/StructureBlueprint:{0}'.format( blueprint_id )
     data[ 'config_values' ] = config_values
     data[ 'hostname' ] = hostname
-    self.cinp.update( '/api/v1/Building/Structure:{0}:'.format( structure_id ), data )
+    self.cinp.update( '/api/v1/Building/Structure:{0}:'.format( structure_id ), data, retry_count=10 )
 
   def buildStaticResource( self, structure_id ):
     self.createStructure( structure_id )
@@ -140,22 +140,22 @@ class Contractor():
     self.destroyStructure( structure_id )
 
   def createFoundation( self, id ):
-    self.cinp.call( '/api/v1/Building/Foundation:{0}:(doCreate)'.format( id ), {} )
+    self.cinp.call( '/api/v1/Building/Foundation:{0}:(doCreate)'.format( id ), {}, retry_count=10 )
 
   def createStructure( self, id ):
-    self.cinp.call( '/api/v1/Building/Structure:{0}:(doCreate)'.format( id ), {} )
+    self.cinp.call( '/api/v1/Building/Structure:{0}:(doCreate)'.format( id ), {}, retry_count=10 )
 
   def destroyFoundation( self, id ):
-    self.cinp.call( '/api/v1/Building/Foundation:{0}:(doDestroy)'.format( id ), {} )
+    self.cinp.call( '/api/v1/Building/Foundation:{0}:(doDestroy)'.format( id ), {}, retry_count=10 )
 
   def destroyStructure( self, id ):
-    self.cinp.call( '/api/v1/Building/Structure:{0}:(doDestroy)'.format( id ), {} )
+    self.cinp.call( '/api/v1/Building/Structure:{0}:(doDestroy)'.format( id ), {}, retry_count=10 )
 
   def deleteFoundation( self, id ):
-    self.cinp.delete( '/api/v1/Building/Foundation:{0}:'.format( id ) )
+    self.cinp.delete( '/api/v1/Building/Foundation:{0}:'.format( id ), retry_count=10 )
 
   def deleteStructure( self, id ):
-    self.cinp.delete( '/api/v1/Building/Structure:{0}:'.format( id ) )
+    self.cinp.delete( '/api/v1/Building/Structure:{0}:'.format( id ), retry_count=10 )
 
   def registerWebHook( self, instance, on_build, foundation_id=None, structure_id=None ):
     data = {}
@@ -183,20 +183,20 @@ class Contractor():
     self.cinp.create( box_url, data )
 
   def getNetworkUsage( self, id ):
-    return self.cinp.call( '/api/v1/Utilities/AddressBlock:{0}:(usage)'.format( id ), {} )
+    return self.cinp.call( '/api/v1/Utilities/AddressBlock:{0}:(usage)'.format( id ), {}, retry_count=10 )
 
   def getBluePrint( self, id ):
-    return self.cinp.get( '/api/v1/BluePrint/StructureBluePrint:{0}:'.format( id ) )
+    return self.cinp.get( '/api/v1/BluePrint/StructureBluePrint:{0}:'.format( id ), retry_count=10 )
 
   # used by manageResources.py
   def getSite( self, id ):
-    return self.cinp.get( '/api/v1/Site/Site:{0}:'.format( id ) )
+    return self.cinp.get( '/api/v1/Site/Site:{0}:'.format( id ), retry_count=10 )
 
   def getNetwork( self, id ):
-    return self.cinp.get( '/api/v1/Utilities/Network:{0}:'.format( id ) )
+    return self.cinp.get( '/api/v1/Utilities/Network:{0}:'.format( id ), retry_count=10 )
 
   def getAddressBlock( self, id ):
-    return self.cinp.get( '/api/v1/Utilities/AddressBlock:{0}:'.format( id ) )
+    return self.cinp.get( '/api/v1/Utilities/AddressBlock:{0}:'.format( id ), retry_count=10 )
 
   def getComplex( self, id ):
-    return self.cinp.get( '/api/v1/Building/Complex:{0}:'.format( id ) )
+    return self.cinp.get( '/api/v1/Building/Complex:{0}:'.format( id ), retry_count=10 )

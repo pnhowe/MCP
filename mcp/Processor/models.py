@@ -6,6 +6,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 
 from cinp.orm_django import DjangoCInP as CInP
+from cinp.client import NotFound
 
 from mcp.fields import MapField, package_filename_regex, packagefile_regex, TAG_NAME_LENGTH, BLUEPRINT_NAME_LENGTH, BRANCH_NAME_LENGTH
 
@@ -694,15 +695,23 @@ class BuildJobResourceInstance( models.Model ):
     """
     Get the Host detail, including info from Contractor, this is a bit expensive, use conservitivally.
     """
-    contractor = getContractor()
-    config = contractor.getFullConfig( self.resource_instance.contractor_structure_id )
-
     result = {
                'structure_id': self.resource_instance.contractor_structure_id,
-               'hostname': self.hostname,
-               'ip_address': config[ '_primary_address' ],
-               'config_uuid': config[ '_structure_config_uuid' ]
-              }
+               'hostname': self.hostname
+    }
+
+    contractor = getContractor()
+    try:
+      config = contractor.getFullConfig( self.resource_instance.contractor_structure_id )
+    except NotFound:
+      config = None
+
+    if config is not None:
+      result[ 'fqdn' ] = config[ '_fqdn' ]
+      result[ 'site' ] = config[ '_site' ]
+      result[ 'ip_address' ] = config[ '_primary_address' ][ 'address' ]
+      result[ 'config_uuid' ] = config[ '_structure_config_uuid' ]
+      result[ 'blueprint' ] = config[ '_blueprint' ]
 
     try:
       result[ 'foundation_id' ] = self.resource_instance.contractor_foundation_id
