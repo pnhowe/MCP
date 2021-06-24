@@ -547,7 +547,7 @@ function hashChange( event )
         for( var uri in data )
         {
           var item = data[ uri ];
-          queueEntries.append( '<tr><td>' + item.project + '</td><td>' + item.priority + '</td><td>' + item.build + '</td><td>' + item.branch + '</td><td>' + item.target + '</td><td>' + item.resource_status + '</td><td>' + item.manual + '</td><td>' + item.created + '</td><td>' + item.updated + '</td></tr>' );
+          queueEntries.append( '<tr><td>' + item.project + '</td><td>' + item.priority + '</td><td>' + item.build + '</td><td>' + item.branch + '</td><td>' + item.target + '</td><td>' + item.resource_status + '</td><td>' + JSON.stringify( item.resource_status_map ) + '</td><td>' + item.manual + '</td><td>' + item.created + '</td><td>' + item.updated + '</td></tr>' );
         }
       }
     ).fail(

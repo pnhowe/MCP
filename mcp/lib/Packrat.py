@@ -1,7 +1,8 @@
 import logging
-from cinp import client
 
 from django.conf import settings
+
+from cinp import client, InvalidSession
 
 PACKRAT_API_VERSION = '2.0'
 
@@ -17,7 +18,7 @@ class Packrat():
     self.username = username
     self.cinp = client.CInP( host, '/api/v2/', proxy )
 
-    root = self.cinp.describe( '/api/v2/', retry_count=10 )
+    root, _ = self.cinp.describe( '/api/v2/', retry_count=10 )
     if root[ 'api-version' ] != PACKRAT_API_VERSION:
       raise Exception( 'Expected API version "{0}" found "{1}"'.format( PACKRAT_API_VERSION, root[ 'api-version' ] ) )
 
@@ -27,7 +28,12 @@ class Packrat():
 
   def logout( self ):
     logging.debug( 'packrat: logout' )
-    self.cinp.call( '/api/v2/Auth/User(logout)', { 'token': self.token }, retry_count=10 )
+    try:
+      self.cinp.call( '/api/v2/Auth/User(logout)', { 'token': self.token }, retry_count=10 )
+    except InvalidSession:
+      pass
+    self.cinp.setAuth()
+    self.token = None
 
   def packages( self ):
     logging.debug( 'packrat: listing packages' )

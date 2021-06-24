@@ -1,6 +1,6 @@
 from django.conf import settings
 
-from cinp import client
+from cinp import client, InvalidSession
 
 CONTRACTOR_API_VERSION = '0.9'
 
@@ -15,7 +15,7 @@ class Contractor():
     self.username = username
     self.cinp = client.CInP( host, '/api/v1/', proxy )
 
-    root = self.cinp.describe( '/api/v1/', retry_count=10 )
+    root, _ = self.cinp.describe( '/api/v1/', retry_count=10 )
     if root[ 'api-version' ] != CONTRACTOR_API_VERSION:
       raise Exception( 'Expected API version "{0}" found "{1}"'.format( CONTRACTOR_API_VERSION, root[ 'api-version' ] ) )
 
@@ -23,7 +23,12 @@ class Contractor():
     self.cinp.setAuth( username, self.token )
 
   def logout( self ):
-    self.cinp.call( '/api/v1/Auth/User(logout)', { 'token': self.token }, retry_count=10 )
+    try:
+      self.cinp.call( '/api/v1/Auth/User(logout)', { 'token': self.token }, retry_count=10 )
+    except InvalidSession:
+      pass
+    self.cinp.setAuth()
+    self.token = None
 
   def allocateDynamicResource( self, site_id, complex_id, blueprint_id, config_values, interface_map, hostname ):
     complex_uri = '/api/v1/Building/Complex:{0}:'.format( complex_id )
