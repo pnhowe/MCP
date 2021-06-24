@@ -23,15 +23,17 @@ def test_lint( mocker ):
   m = Makefile( 'testdir', 'test_build' )
 
   popen.return_value = FakeProc( 0, '', '' )
-  assert m.lint() is True
-  popen.assert_called_with( [ '/usr/bin/make', 'BUILD_NAME=test_build', 'MCP=1', '-s', '-C', 'testdir', '-n' ], stderr=-2, stdout=-1 )
+  m.lint()
+  popen.assert_called_with( [ '/usr/bin/make', 'BUILD_NAME=test_build', 'MCP=1', '-s', '-C', 'testdir', '-n' ], stderr=-1, stdout=-1 )
 
   popen.return_value = FakeProc( 2, '', '' )
-  assert m.lint() is False
-  popen.assert_called_with( [ '/usr/bin/make', 'BUILD_NAME=test_build', 'MCP=1', '-s', '-C', 'testdir', '-n' ], stderr=-2, stdout=-1 )
+  with pytest.raises( MakeException ):
+    m.lint()
+  popen.assert_called_with( [ '/usr/bin/make', 'BUILD_NAME=test_build', 'MCP=1', '-s', '-C', 'testdir', '-n' ], stderr=-1, stdout=-1 )
 
   popen.return_value = FakeProc( 1, '', '' )
-  assert m.lint() is False
+  with pytest.raises( MakeException ):
+    m.lint()
 
 
 def test_version( mocker ):
@@ -40,16 +42,19 @@ def test_version( mocker ):
   m = Makefile( 'testdir', 'test_build' )
 
   popen.return_value = FakeProc( 0, '', '' )
-  assert m.version() is None
+  with pytest.raises( MakeException ):
+    m.version()
 
   popen.return_value = FakeProc( 0, '2.0', '' )
   assert m.version() == '2.0'
 
   popen.return_value = FakeProc( 2, '', '' )
-  assert m.version() is None
+  with pytest.raises( MakeException ):
+    m.version()
 
   popen.return_value = FakeProc( 1, '', '' )
-  assert m.version() is None
+  with pytest.raises( MakeException ):
+    m.version()
 
 
 def test_autoBuilds( mocker ):
