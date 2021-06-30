@@ -347,7 +347,7 @@ function hashChange( event )
                 {
                   var targetIcon = '<i class="fa fa-cogs fa-lg fa-fw"></i>'
                 } else {
-                  var targetIcon = '<i class="fa fa-dot-circle fa-lg fa-fw"></i>'
+                  var targetIcon = '<i class="fa fa-dot-circle fa-lg fa-fw"></i>&nbsp;user:' + item.user
                 }
                 var distro = item.build.split(':')[2]
                 jobEntry += '<div class="panel panel-default"><div class="panel-body" id="build-id-' + buildID + '"><ul class="list-inline"><li>' + targetIcon + '&nbsp;' + item.target + '</li><li>build #' + buildID + '<li>state: ' + item.state + '</li><li>succeeded: ' + item.suceeded + '</li><li>score: ' + item.score + '</li><li>' + buttons + '</li></ul></div><ul class="list-group">'
@@ -411,7 +411,7 @@ function hashChange( event )
               for( var uri in data )
               {
                 var item = data[ uri ];
-                queueEntry += '<a class="list-group-item"><ul class="list-inline"><li>priority: ' + item.priority + '<li>build: ' + item.build + '</li><li>branch: ' + item.branch + '</li><li>target: ' + item.target + '</li><li>status: ' + item.resource_status + '</li><li>manual: ' + item.manual + '</li><li>created: ' + item.created + '</li><li>updated: ' + item.updated + '</li></ul></a>'
+                queueEntry += '<a class="list-group-item"><ul class="list-inline"><li>priority: ' + item.priority + '<li>build: ' + item.build + '</li><li>branch: ' + item.branch + '</li><li>target: ' + item.target + '</li><td>status: ' + item.resource_status + '</td><td>resource status: ' + JSON.stringify( item.resource_status_map ) + '</td><li>manual: ' + item.manual + '</li><li>created: ' + item.created + '</li><li>updated: ' + item.updated + '</li></ul></a>'
               }
               queueEntry += '</ul>'
               queueEntries.html(queueEntry)

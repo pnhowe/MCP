@@ -1,6 +1,6 @@
 from django.conf import settings
 
-from cinp import client, InvalidSession
+from cinp import client
 
 CONTRACTOR_API_VERSION = '0.9'
 
@@ -25,7 +25,7 @@ class Contractor():
   def logout( self ):
     try:
       self.cinp.call( '/api/v1/Auth/User(logout)', { 'token': self.token }, retry_count=10 )
-    except InvalidSession:
+    except client.InvalidSession:
       pass
     self.cinp.setAuth()
     self.token = None

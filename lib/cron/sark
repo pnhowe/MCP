@@ -84,7 +84,7 @@ for item in QueueItem.objects.all().order_by( '-priority' ):  # start with the b
     job.full_clean()
     job.save()
 
-    job.network_list.set( Network.objects.filter( name__in=network_map.values() ) )
+    job.network_list.set( network_map.values() )
 
     for buildresource in buildresource_list:
       resource = buildresource.resource.subclass
@@ -191,7 +191,10 @@ for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False
 # iterate over the Acknoledged jobs, and release the resources
 for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False, reported_at__isnull=False, acknowledged_at__isnull=False, released_at__isnull=True ):
   logging.info( 'Releasing resources for job "{0}".'.format( job.id ) )
-  job.releaseResources()
+  try:
+    job.releaseResources()
+  except ProtectedError:
+    logging.warn( 'Job "{0}" not releaseable, will try again.'.format( job.id ) )
 
   # resources all released, set job to released
   if job.instances_released:

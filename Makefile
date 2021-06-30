@@ -75,22 +75,15 @@ dpkg-file:
 #	echo ubuntu-bionic-base
 
 doc-requires:
-	echo mcp-helpers
 	$(MAKE) -C docs requires
 
-NAME := mcp
-DOC_EXCLUDES := **/*_test.py,**/tests.py
-ifeq ($(MAKECMDGOALS),doc)
-include /opt/mcp-helpers/Makefile.doc
-endif
-
-doc: blackduck.python3 docs/mcp.pdf
+doc: docs/mcp.pdf
 
 docs/mcp.pdf:
-	$(MAKE) -C docs mcp.pdf VERSION=$(VERSION) BUILD_NAME=$(BUILD_NAME)
+	$(MAKE) -C docs mcp.pdf VERSION=$(VERSION)
 
 doc-file:
-	echo docs/mcp.pdf:34474541
+	echo docs/mcp.pdf
 
 .PHONY:: doc-blueprints doc-requires doc doc-file
 

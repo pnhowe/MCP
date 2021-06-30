@@ -405,16 +405,16 @@ BuildJob
     if name is not None:
       try:
         instance = self.buildjobresourceinstance_set.get( name=name )
-        result[ instance.index ] = instance.contractor_structure_id
+        result[ instance.index ] = instance.resource_instance.contractor_structure_id
       except BuildJobResourceInstance.DoesNotExist:
         pass
 
     else:
       for instance in self.buildjobresourceinstance_set.all():
         try:
-          result[ instance.name ][ instance.index ] = instance.contractor_structure_id
+          result[ instance.name ][ instance.index ] = instance.resource_instance.contractor_structure_id
         except KeyError:
-          result[ instance.name ] = { instance.index: instance.contractor_structure_id }
+          result[ instance.name ] = { instance.index: instance.resource_instance.contractor_structure_id }
 
     return result
 
@@ -462,7 +462,7 @@ BuildJob
       return False
 
     if verb == 'CALL':
-      if action in ( 'getInstanceState', 'getInstanceDetail' ):
+      if action in ( 'getInstanceState', 'getInstanceStructureId' ):
         return True
 
       if action == 'jobRan' and user.has_perm( 'Processor.can_ran' ):

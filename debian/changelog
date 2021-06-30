@@ -1,3 +1,9 @@
+mcp (0.28.0-1) bionic; urgency=medium
+
+  * bug fixes
+
+ -- Peter Howe <pnhowe@gmail.com>  Tue, 29 Jun 2021 21:47:01 -0600
+
 mcp (0.27.0-1) bionic; urgency=medium
 
   * integrating cinp retry

@@ -9,12 +9,13 @@ clean:
 api.rst:
 	pip3 install -e ..
 	cp ../mcp.conf.sample ../mcp/settings.py
-	../lib/api_server/api_server.py & echo $$! > /tmp/mcp_api_server.pid
-	sleep 5
-	cinp-autodoc -f api.rst http://127.0.0.1:8888/api/v1/
-	sleep 5
-	kill `cat /tmp/mcp_api_server.pid`
-	rm /tmp/mcp_api_server.pid
+	/bin/bash -x -e -c 'function cleanup { kill $$(cat /tmp/mcp_api_server.pid); rm /tmp/mcp_api_server.pid ; }; \
+	../lib/api_server/api_server.py & echo $$! > /tmp/mcp_api_server.pid; \
+	trap cleanup EXIT; \
+	sleep 5; \
+	cinp-autodoc -f api.rst http://127.0.0.1:8888/api/v1/; \
+	sleep 5;'
+
 
 requires:
 	echo python3-pip python3-sphinx texlive texlive-latex-extra cinp-utils python3-django python3-psycopg2 python3-cinp python3-github python3-gunicorn python3-werkzeug
