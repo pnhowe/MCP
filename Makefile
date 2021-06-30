@@ -80,12 +80,12 @@ doc-requires:
 doc: docs/mcp.pdf
 
 docs/mcp.pdf:
-	$(MAKE) -C docs mcp.pdf VERSION=$(VERSION)
+	$(MAKE) -C docs mcp.pdf VERSION=$(VERSION) BUILD_NAME=$(BUILD_NAME)
 
 doc-file:
 	echo docs/mcp.pdf
 
-.PHONY:: doc-blueprints doc-requires doc doc-file
+.PHONY:: doc-blueprints doc-requires doc-file
 
 # builds
 auto-builds:

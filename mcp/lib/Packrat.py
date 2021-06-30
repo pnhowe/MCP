@@ -2,7 +2,7 @@ import logging
 
 from django.conf import settings
 
-from cinp import client, InvalidSession
+from cinp import client
 
 PACKRAT_API_VERSION = '2.0'
 
@@ -30,7 +30,7 @@ class Packrat():
     logging.debug( 'packrat: logout' )
     try:
       self.cinp.call( '/api/v2/Auth/User(logout)', { 'token': self.token }, retry_count=10 )
-    except InvalidSession:
+    except client.InvalidSession:
       pass
     self.cinp.setAuth()
     self.token = None

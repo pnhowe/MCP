@@ -1,7 +1,7 @@
 Stages
 ======
 
-In most places where the target is to "echo" something in a list, that list should be separated by " " or on separate lines.
+In most places where the target is to "echo" something in a list, that list should be separated by " " and/or on separate lines.
 duplicates are ignored.  The following examples all result in the same list::
 
   target-a:
@@ -35,16 +35,15 @@ example::
     echo 2.3
 
 - <target>-blueprints. test-blueprints, doc-blueprints, dpkg-blueprints, rpm-blueprints, respkg-blueprints, resource-blueprints: echo a list of resource types
-  that are used for the target( test, doc, dpkg, rpm, respkg, resource) to run on.
+  that are used for the target (test, doc, dpkg, rpm, respkg, resource) to run on.
 
 examples::
 
   test-blueprints:
-    echo ubuntu-bionic
+    echo ubuntu-bionic-base
 
   dpkg-blueprints:
-    echo ubuntu-bionic
-
+    echo ubuntu-focal-base
 
 - auto-builds: echo a list of builds that are automatically built when changes to the dependencies are detected, these
   can still be manually requested.  A <build>-depends is required to tell MCP what triggers the build.
@@ -61,6 +60,13 @@ example::
   manual-builds:
     echo devlab
 
+- <build>-networks: echo a list of networks required for the build.  If not specified, the resources will be attached to
+  and available network with the required number of ip addresses available.
+
+example::
+  integrationcheck-networks:
+    echo vmnet:{ \"min_addresses\": 128, \"dedicated\": true }
+
 - <build>-resources: echo a list of resources that the build requires to run it's job.
 
 examples::
@@ -70,14 +76,10 @@ examples::
 
   integrationcheck-resources:
     echo controller:{ \"resource\": \"vm\", "\"blueprint\": \"ubuntu-xenial\", \"config_values\": { \"cpu_count\": 2 }, \"interface_map\": { \"eth0\": {}, \"eth1\": { \"network\": \"vmnet\", \"offset\": 10 } } }
-    echo esx01:{ \"resource\": \"server\", "\"blueprint\": \"esx\", \"auto_run\": true, \"interface_map\": { \"vmnic0\": {}, \"vmnic1\": { \"network\": \"vmnet\", \"offset\": 20 } } }
+    echo esx01:{ \"resource\": \"server\", "\"blueprint\": \"esx\", \"auto_run\": true, \"interface_map\": { \"vmnic0\": {}, \"vmnic1\": { \"network\": \"vmnet\", \"offset\": 20 } }, \"auto_run\": true, \"auto_provision\": false }
 
-- <build>-networks: echo a list of networks required for the build.  If not specified, the resources will be attached to
-  and available network with the required number of ip addresses available.
-
-example::
-  integrationcheck-networks:
-    echo vmnet:{ \"min_addresses\": 128, \"dedicated\": true }
+NOTE: "auto_run" means MCP will not wait for nullunit to run on that node before considering it "ran"
+NOTE2: "auto_provision" means MCP will not tell contractor to build the structure, and it will consider it ran when the foundation is built.
 
 - <build>-depends: echo a list of packages and tags this auto build is triggered by.  NOTE: the build is triggered when
   the package is being tagged with the specified tag.  If the build fails, the package is tagged as failed.
@@ -94,29 +96,22 @@ example::
     echo demoservice:stage
 
 
-Make targets Run on target resource (By nullunit)
+Make targets Run on target resource (by nullunit)
 -------------------------------------------------
 
-nullunit sets the folling environment variables:
+nullunit sets the fallowing make variables:
 
 - NULLUNIT=1
 - BUILD_NAME : for builds on the release branch this is a plain number, for other branches it is the number for the last
-  release branch bhuld appended by '-<branch name>'.  forexample `14-_PR5`
+  release branch bhuld appended by '-<branch name>'.  for example `14-_PR5`
 
-if the target is *NOT* in `test`, packaging ( `dpkg`, `rpm`, `respkg`, `resource` ), or `doc`:
+if the target is *NOT* in `test`, packaging(ie: `dpkg`, `rpm`, `respkg`, `resource`), or `doc`:
 
 - RESOURCE_NAME - the name of the resource in the <build>-resource list
 - RESOURCE_INDEX - the index offset this resource is, usually a 1 unless a count is specified in the <build>-resource.
 
-- <target>-config: if the target is *NOT* in `test`, packaging ( `dpkg`, `rpm`, `respkg`, `resource` ), or `doc`.  echo configuration
-  values to be pushed to contractor for this resource.
-
-example::
-
-  integration-check-config
-
 - <target>-requires: echo a list of packages are required for the target.  These will be installed by the platform's packaging
-  system, ie: yum and apt.
+  system, ie: yum or apt.
 
 examples::
 
@@ -143,9 +138,9 @@ examples::
     touch dpkg-setup
 
 - <target>-file: for packaging target.  return a list of files that should be uploaded to packrat.  For doc-file
-  there also specify the page the file should be attached to.  For files going to packrat, a blueprint version should
-  be specified if packrat will not be able to auto-detect the version.  And if the file type will not be auto-detectable
-  a third parameter should be specified.
+  there also specify the page the file should be attached to.  For files going to packrat, a distro version should
+  be specified if packrat will not be able to auto-detect the version.  And if the file type (ie: dpkg, rpm, docker, etc.)
+  will not be auto-detectable a third parameter should be specified.
 
 examples::
 

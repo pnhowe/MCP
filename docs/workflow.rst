@@ -52,11 +52,11 @@ pseudo code of the project scanner::
       if branch is the release branch:
         retrieve list of resources for documentation by running `make doc-blueprints`
 
-      retrieve list of auto(integration testing) builds by running `make auto-builds`
+      if branch is the release branch:
+        retrieve list of auto(integration testing) builds by running `make auto-builds`
+        retrieve list of manual builds by running `make manual-builds`
 
-      retrieve list of manual builds by running `make manual-builds`
-
-      for each builds:
+      for each of the return builds:
         retrieve list of package dependencies by running `make <build>-depends`
         retrieve list of resources by running `make <build>-resources`
         retrieve list of networks by running `make <build>-networks`
@@ -66,17 +66,14 @@ After the commit records are created, MCP goes over targets and allocates resour
 targets are `test`, packaging ( `dpkg`, `rpm`, `respkg`, `resource` ) and if the commit
 is for the release branch `doc`.
 
+pseudo code for the resource running the resource that has been created for the job::
 
-pseudo code for the resource running a target::
-
-  clone the repo from the staging/internal git
+  clone the repo from the internal git
   checkout the branch/commit
-
-  if target is not `test`, packaging, and `doc`:
-    get configuration falues to push to contractor via `make <target>-config`
 
   retrieve the required packages by running `make <target>-requires`
   install the packages (via yum/apt)
+
   clean by running `make clean`
 
   setup for target by running `make <target>-setup`
@@ -85,7 +82,7 @@ pseudo code for the resource running a target::
     do lint check with `make lint`
     to unit/self test(s) with `make test`
 
-  else if packaging:
+  else if packaging (ie: 'dpkg', 'rpm', 'respkg', 'resource'):
     build the package with `make <target>`
     retrieve the list of files by `make <target>-file`
     if branch is the release branch::
@@ -94,14 +91,15 @@ pseudo code for the resource running a target::
   else if `doc` and branch is the release branch::
     build the documents with `make doc`
     retrieve the list of files with `make doc-file`
-    upload file(s) to confluence
+    upload file(s) to confluence(not fully implemented yet)
 
   else:
     do the target with `make <target>`
 
 MCP will then record the results for each of the target stages back to the commit.  If any stage fails,
-processing stopps at that point.  If the test coverage is outputed in a format that Nullunit understands
-the coverage value is also stored in the commit.  When the commit is finished processing, a results
-summary is posted as a comment to the commit, if it is a PR branch then MCP sets the status check, which
-enables protection on PR merging to block on test/lint/packaging results.  If the coverage drops from
-commit to the next, there is a warning posted on the commit message.
+processing stops at that point.  If the test coverage is outputted in a format that Nullunit understands,
+the coverage value is also stored in the commit.  When the commit is finished processing, a summary of the
+results is posted as a comment to the commit(if the SCM is github/gitlab), if it is a PR/MR branch then MCP
+sets the status check, which enables protection on PR merging to block on test/lint/packaging results.  If
+the coverage drops from commit to the next, there is a warning posted on the commit message.  If the commit
+is on the release branch, a tag of the version is tagged to the commit.
