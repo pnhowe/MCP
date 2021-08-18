@@ -29,6 +29,7 @@ class Site( models.Model ):
 Site
   """
   name = models.CharField( max_length=40, primary_key=True )  # also the site_id on contractor
+  generic = models.BooleanField( default=True, help_text='for jobs without a site called out' )
   created = models.DateTimeField( editable=False, auto_now_add=True )
   updated = models.DateTimeField( editable=False, auto_now=True )
 

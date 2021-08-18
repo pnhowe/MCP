@@ -49,6 +49,7 @@ parser.add_argument( '--monolithic', help='Flag the Network as Monolithic', acti
 parser.add_argument( '--complex', help='Complex Contractor id for required operations', metavar='COMPLEX ID' )
 parser.add_argument( '--blueprint', help='Blueprint of dynamic resource entries to pre-build' )
 parser.add_argument( '--build-ahead-count', help='Number of dynamic resource entries to pre-build', type=int, default=0 )
+parser.add_argument( '--generic', help='Flag as a generic site', action='store_true' )
 
 parser.add_argument( '--json', help='Output lists as JSON instead of a table', action='store_true' )
 
@@ -67,9 +68,9 @@ if args.site:
 if args.site_list or args.network_list or args.dynamic_resource_list:
   table = PrettyTable()
   if args.site_list:
-    table.field_names = [ 'Name' ]
+    table.field_names = [ 'Name', 'Generic' ]
     for site in Site.objects.all().order_by( 'pk' ):
-      table.add_row( [ site.name ] )
+      table.add_row( [ site.name, site.generic ] )
 
   if args.network_list:
     if site is None:
@@ -120,6 +121,7 @@ if args.site_add:
 
   site = Site()
   site.name = args.name
+  site.generic = args.generic
   site.full_clean()
   site.save()
 

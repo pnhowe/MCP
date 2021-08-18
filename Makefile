@@ -31,6 +31,8 @@ clean:
 	$(RM) -r htmlcov
 	dh_clean || true
 	$(MAKE) -C docs clean
+	find -name *.pyc -delete
+	find -name __pycache__ -delete
 
 dist-clean: clean
 

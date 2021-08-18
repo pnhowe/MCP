@@ -115,7 +115,10 @@ QueueItem
     network_map = {}
     other_ip_count = 0
 
-    site = Site.objects.all().order_by( '?' )[0]  # yeah we might guess and pick the wrong site (without resources), but it will get retried, we should do some site scoring and do that instead
+    if self.project.site:
+      site = self.project.site
+    else:
+      site = Site.objects.filter( generic=True ).order_by( '?' )[0]  # yeah we might guess and pick the wrong site (without resources), but it will get retried, we should do some site scoring and do that instead
 
     # first allocate the network(s)
     for name, item in self.build.network_map.items():

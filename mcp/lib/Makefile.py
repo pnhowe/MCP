@@ -71,6 +71,9 @@ class Makefile():
   def manualBuilds( self ):
     return self._execute( 'manual-builds' )[0]
 
+  def options( self, build ):
+    return self._execute( '{0}-options'.format( build ), do_split=False )[0]
+
   def resources( self, build ):
     return self._execute( '{0}-resources'.format( build ), do_split=False )[0]
 

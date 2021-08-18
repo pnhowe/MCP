@@ -62,24 +62,43 @@ class InternalGit():
     self._execute( [ 'fetch', 'origin', '+refs/heads/*:refs/heads/*', '--force' ] )
     self._execute( [ 'update-server-info' ] )  # should not have to run this... the hook/post-update should be doing this
 
-  def fetch_branch( self, remote_name, local_name ):
+  def fetchBranch( self, remote_name, local_name ):
     self._execute( [ 'fetch', 'origin', '{0}:{1}'.format( remote_name, local_name ), '--force' ] )
     self._execute( [ 'update-server-info' ] )  # should not have to run this... the hook/post-update should be doing this
 
-  def remove_branch( self, branch ):
+  def removeBranch( self, branch ):
     if branch == self.release_branch:
       raise Exception( 'Release Branch "{0}" is not Deleteable'.format( self.release_branch ) )
 
     self._execute( [ 'branch', '-D', branch ] )
 
-  def ref_map( self ):
-    result = {}
-    ref_list = self._execute( [ 'show-ref' ], ignore_rc_1=True )
-    for item in ref_list:
-      ( ref_hash, ref ) = item.split()
-      if not ref.startswith( 'refs/heads/' ):
+  def pruneOldBranches( self ):
+    local_ref_list = set( self.localRefMap().keys() )
+    if not local_ref_list:
+      return
+
+    remote_ref_list = set( self.remoteRefMap().keys() )
+
+    for branch in local_ref_list - remote_ref_list:
+      if branch.startswith( '_' ):  # skip the _MR / _PR branches, thoes are cleaned up else where
         continue
 
+      self.removeBranch( branch )
+
+  def localRefMap( self ):
+    result = {}
+    ref_list = self._execute( [ 'show-ref', '--heads' ], ignore_rc_1=True )
+    for item in ref_list:
+      ( ref_hash, ref ) = item.split()
+      result[ ref[11:] ] = ref_hash
+
+    return result
+
+  def remoteRefMap( self ):
+    result = {}
+    ref_list = self._execute( [ 'ls-remote', '--heads', 'origin' ], ignore_rc_1=True )
+    for item in ref_list:
+      ( ref_hash, ref ) = item.split()
       result[ ref[11:] ] = ref_hash
 
     return result

@@ -15,7 +15,7 @@ from mcp.lib.InternalGit import InternalGit
 from mcp.lib.Git import Git
 from mcp.lib.GitHub import GitHub
 from mcp.lib.GitLab import GitLab
-from mcp.Resource.models import Resource
+from mcp.Resource.models import Resource, Site
 
 
 cinp = CInP( 'Project', '0.1' )
@@ -401,7 +401,7 @@ This is a GitLab Project
     return True
 
   def __str__( self ):
-    return 'GitLab Project "{0}"({1}/{2})'.format( self.name, self._group_id, self._project_id )
+    return 'GitLab Project "{0}"({1}/{2})'.format( self.name, self.gitlab_project_path, self.gitlab_project_id )
 
 
 @cinp.model( not_allowed_verb_list=[ 'CREATE', 'DELETE', 'UPDATE', 'CALL' ] )
@@ -835,6 +835,7 @@ This is a type of Build that can be done
   resources = models.ManyToManyField( Resource, through='BuildResource', help_text='' )
   network_map = MapField( blank=True )
   manual = models.BooleanField()
+  site = models.ForeignKey( Site, on_delete=models.PROTECT, blank=True, null=True, help_text='Site to build on, if not specified will be built on any site that is flaged as generic' )
   created = models.DateTimeField( editable=False, auto_now_add=True )
   updated = models.DateTimeField( editable=False, auto_now=True )
 

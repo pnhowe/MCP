@@ -16,9 +16,9 @@ import sys
 import logging
 from logging.handlers import SysLogHandler
 from datetime import datetime, timezone, timedelta
+from django.db.models import ProtectedError
 
 from mcp.Processor.models import QueueItem, BuildJob
-from mcp.Resource.models import Network
 from mcp.lib.Slack import getSlack
 
 # in Hours

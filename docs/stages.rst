@@ -60,10 +60,19 @@ example::
   manual-builds:
     echo devlab
 
+- <build>-options: echo a JSON string with the build options, currently can only specify the target stie.  If the site
+  is not found, the build is ignored.
+
+example::
+
+  integrationcheck-options:
+    echo { \"site\": \"test1\" }
+
 - <build>-networks: echo a list of networks required for the build.  If not specified, the resources will be attached to
   and available network with the required number of ip addresses available.
 
 example::
+
   integrationcheck-networks:
     echo vmnet:{ \"min_addresses\": 128, \"dedicated\": true }
 

@@ -26,7 +26,7 @@ from logging.handlers import SysLogHandler
 from django.db.models import ProtectedError
 
 from mcp.Project.models import Project, Commit, Build, Package, BuildDependancy, BuildResource
-from mcp.Resource.models import Resource
+from mcp.Resource.models import Resource, Site
 from mcp.lib.Makefile import Makefile, MakeException
 from mcp.lib.t3kton import getContractor
 from mcp.lib.Slack import getSlack
@@ -139,16 +139,52 @@ def _cleanInterfaceMap( interface_map ):
 
 
 def _makeBuild( build_name, project, manual ):
-  network_list = make.networks( build_name )  # if these have a makefile exception it should roll up
+  options = make.options( build_name )  # if these have a makefile exception it should roll up
+  network_list = make.networks( build_name )
   resource_list = make.resources( build_name )
   if manual:
-    logging.debug( 'Build: "{0}" resources: "{1}" networks: "{2}".'.format( build_name, resource_list, network_list ) )
+    logging.debug( 'Build: "{0}" options: "{1}" resources: "{2}" networks: "{3}".'.format( build_name, options, resource_list, network_list ) )
   else:
     dependancy_list = make.depends( build_name )
-    logging.debug( 'Build: "{0}" depends: "{1}" resources: "{2}" networks: "{3}".'.format( build_name, dependancy_list, resource_list, network_list ) )
+    logging.debug( 'Build: "{0}" depends: "{1}" options: "{2}" resources: "{3}" networks: "{4}".'.format( build_name, dependancy_list, options, resource_list, network_list ) )
+
+  try:
+    build = project.build_set.get( name=build_name )
+    if manual != build.manual:
+      build.manual = manual
+      build.full_clean()
+      build.save()
+
+  except Build.DoesNotExist:
+    build = Build()
+    build.name = build_name
+    build.project = project
+    build.manual = manual
+    build.full_clean()
+    build.save()
+
+  if options:
+    try:
+      options_map = json.loads( options )
+    except ( ValueError, json.JSONDecodeError ):
+      build.delete()
+      return 'Error parsing options info, killing the build.'
+
+    try:
+      site = Site.objects.get( name=options_map[ 'site' ] )
+      build.site = site
+    except KeyError:
+      pass
+    except Site.DoesNotExist:
+      build.delete()
+      return 'Site "{0}" not found, killing the build.'.format( options[ 'site' ] )
+
+  else:
+    build.site = None
 
   if not resource_list:
-    return 'Build "{0}" has no resources'.format( build_name )
+    build.delete()
+    return 'Build has no resources, killing the build.'
 
   package_map = {}
   if not manual:
@@ -178,22 +214,8 @@ def _makeBuild( build_name, project, manual ):
       package_map[ package_name ] = tag
 
     if not package_map:
-      return 'All Packages for Build "{0}" are not found in Packrat, skipping build.'.format( build_name )
-
-  try:
-    build = project.build_set.get( name=build_name )
-    if manual != build.manual:
-      build.manual = manual
-      build.full_clean()
-      build.save()
-
-  except Build.DoesNotExist:
-    build = Build()
-    build.name = build_name
-    build.project = project
-    build.manual = manual
-    build.full_clean()
-    build.save()
+      build.delete()
+      return 'All Packages are not found in Packrat, killing the build.'
 
   build.network_map = {}
   for network in network_list:
@@ -202,7 +224,7 @@ def _makeBuild( build_name, project, manual ):
        data = json.loads( data )
     except ( ValueError, json.JSONDecodeError ):
       build.delete()
-      return 'Error parsing network info: "{0}", killing the build'.format( data )
+      return 'Error parsing network info: "{0}", killing the build.'.format( data )
 
     build.network_map[ name ] = {}
     for item, default in ( ( 'dedicated', False ), ):
@@ -237,21 +259,21 @@ def _makeBuild( build_name, project, manual ):
        data = json.loads( data )
     except ( ValueError, json.JSONDecodeError ):
       build.delete()
-      return 'Error parsing resource info: "{0}", killing the build'.format( data )
+      return 'Error parsing resource info: "{0}", killing the build.'.format( data )
 
     if 'resource' not in data or 'blueprint' not in data:
       build.delete()
-      return '"resource" and/or "blueprint" is missing from resource "{0}", killing the build'.format( name )
+      return '"resource" and/or "blueprint" is missing from resource "{0}", killing the build.'.format( name )
 
     try:
       Resource.objects.get( name=data[ 'resource' ] )
     except Resource.DoesNotExist:
       build.delete()
-      return 'Resource "{0}" for build "{1}" does not exist, killing the build.'.format( data[ 'resource' ], build_name )
+      return 'Resource "{0}" does not exist, killing the build.'.format( data[ 'resource' ] )
 
     if not _checkBluePrint( data[ 'blueprint' ] ):
       build.delete()
-      return 'Blueprint "{0}" not found, killing the build'.format( data[ 'blueprint' ] )
+      return 'Blueprint "{0}" not found, killing the build.'.format( data[ 'blueprint' ] )
 
     target_resource_list.append( json.dumps( { 'resource': data[ 'resource' ],
                                                'blueprint': data[ 'blueprint' ],
@@ -269,7 +291,7 @@ def _makeBuild( build_name, project, manual ):
       Package.objects.get( name=package_name )
     except Package.DoesNotExist:
       build.delete()
-      return 'Package "{0}" for build "{1}" does not exist, killing the build.'.format( package_name, build_name )  # hopfully it was just created, but just in case
+      return 'Package "{0}" does not exist, killing the build.'.format( package_name )
 
     target_dependancy_list.append( json.dumps( { 'name': package_name, 'tag': tag }, sort_keys=True ) )
 
@@ -359,10 +381,12 @@ for project in Project.objects.all().order_by( 'last_checked' ):
     project.save()
 
   else:
-    logging.debug( 'Updating "{0}"...'.format( project.name ) )
     git = project.internal_git
 
+  logging.debug( 'Updating "{0}"...'.format( project.name ) )
   git.update()
+  logging.debug( 'Pruning old branches "{0}"...'.format( project.name ) )
+  git.pruneOldBranches()
 
   try:
     scm = project.scm
@@ -376,11 +400,11 @@ for project in Project.objects.all().order_by( 'last_checked' ):
     logging.warning( 'Connection Error getting Merge List, will try again later.' )
     continue
 
-  for branch in git.ref_map():
+  for branch in git.localRefMap().keys():
     merge = scm.branchToMerge( branch )
     if merge is not None and merge not in merge_list:
       logging.debug( 'Cleaning up branch "{0}"'.format( branch ) )
-      git.remove_branch( branch )
+      git.removeBranch( branch )
 
   for merge in merge_list:
     branch_name = scm.mergeToBranch( merge )
@@ -388,13 +412,13 @@ for project in Project.objects.all().order_by( 'last_checked' ):
       continue
 
     logging.info( '  Pulling MR/PR "{0}"'.format( merge ) )
-    git.fetch_branch( scm.mergeToRef( merge ), branch_name )
+    git.fetchBranch( scm.mergeToRef( merge ), branch_name )
 
-  branch_map = git.ref_map()
+  branch_map = git.localRefMap()
 
   logging.debug( 'Branches: "{0}"'.format( branch_map ) )
 
-  for branch in branch_map.keys():
+  for branch in branch_map.keys():  # yes, this will go over the MR/PRs again, but they allready have commits, mabey some day optimize?
     try:
       commit = Commit.objects.get( project=project, branch=branch, commit=branch_map[ branch ] )
       continue  # allready there, don't need to worry about it

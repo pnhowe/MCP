@@ -207,16 +207,16 @@ function hashChange( event )
 
                 if( item.summary.status == 'Success')
                 {
-                  commitEntry += '<li class="text-success">test passed</li>'
+                  commitEntry += '<li class="text-success">Test Passed</li>'
                 } else if( !item.summary && item.summary.status == 'Failed') {
-                  commitEntry += '<li class="text-danger">test failed</li>'
+                  commitEntry += '<li class="text-danger">Test Failed</li>'
                 }
 
                 if (item.summary.build.status == 'Success')
                 {
-                  commitEntry += '<li>build succeeded</li>'
+                  commitEntry += '<li>Build Succeeded</li>'
                 } else if( !item.summary.build && item.summary.build.status == 'Failed') {
-                  commitEntry += '<li>project build failed</li>'
+                  commitEntry += '<li>Build Failed</li>'
                 }
 
                 // added to support more intuitive decoration for collapsible sections
@@ -343,14 +343,14 @@ function hashChange( event )
                 {
                   buttons = '<button type="button" class="btn btn-danger btn-sm" uri="' + uri + '" kind="' + item.target + ' job" action="jobRan" do="action">Force Ran</button>';
                 }
+
                 if( !item.manual )
                 {
                   var targetIcon = '<i class="fa fa-cogs fa-lg fa-fw"></i>'
                 } else {
-                  var targetIcon = '<i class="fa fa-dot-circle fa-lg fa-fw"></i>&nbsp;user:' + item.user
+                  var targetIcon = '<i class="fa fa-dot-circle fa-lg fa-fw"></i>'
                 }
-                var distro = item.build.split(':')[2]
-                jobEntry += '<div class="panel panel-default"><div class="panel-body" id="build-id-' + buildID + '"><ul class="list-inline"><li>' + targetIcon + '&nbsp;' + item.target + '</li><li>build #' + buildID + '<li>state: ' + item.state + '</li><li>succeeded: ' + item.suceeded + '</li><li>score: ' + item.score + '</li><li>' + buttons + '</li></ul></div><ul class="list-group">'
+                jobEntry += '<div class="panel panel-default"><div class="panel-body" id="build-id-' + buildID + '"><ul class="list-inline"><li>' + targetIcon + '&nbsp;' + item.target + '</li><li>user:' + item.user + '</li><li>build #' + buildID + '<li>state: ' + item.state + '</li><li>succeeded: ' + item.succeeded + '</li><li>' + buttons + '</li></ul></div><ul class="list-group">'
 
                 var resources = item.instance_summary
                 for( var key in resources )
@@ -360,26 +360,29 @@ function hashChange( event )
                     var instanceId = resources[ key ][ index ].id
                     var jobSuccess = resources[ key ][ index ].success
                     var jobStatus = resources[ key ][ index ].state
+                    var jobMessage = resources[ key ][ index ].message
                     var jobResults = resources[ key ][ index ].results
+                    var jobScore = resources[ key ][ index ].score
+
                     jobEntry += '<a class="list-group-item" data-toggle="collapse" data-target="#job-' + instanceId + '" data-parent="#build-id-' + buildID + '"><ul class="list-inline">';
 
                     if( jobSuccess )
                     {
                       jobEntry += '<li><i class="fa fa-cog fa-lg fa-fw"></i> <span class="text-success">'
-                    } else if( jobSuccess == null && !jobStatus.match( '^Exception:' )) {
-                      jobEntry += '<li><i class="fa fa-cog fa-lg fa-fw fa-spin"></i> <span class="text-warn">'
                     } else {
                       jobEntry += '<li><i class="fa fa-cog fa-lg fa-fw"></i> <span class="text-danger">'
                     }
-                    jobEntry += key + '</span></li><li>distro: ' + distro + '</li>'
+                    jobEntry += key + '</span></li>'
+                    jobEntry += '<li class="text-info">' + jobStatus + '</li>'
 
-                    if( jobStatus.match( '^Exception:' ) )
+                    if( jobMessage )
                     {
-                      jobEntry += '<li class="text-danger">' + jobStatus + '</li>'
-                    } else if( jobStatus == 'Ran' ) {
-                      jobEntry += '<li class="text-primary text-lowercase">status: ' + jobStatus + '</li>'
-                    } else {
-                      jobEntry += '<li class="text-info">' + jobStatus + '</li>'
+                      jobEntry += '<li class="text-primary">' + jobMessage + '</li>'
+                    }
+
+                    if( jobScore )
+                    {
+                      jobEntry += '<li class="text-primary">score: ' + jobScore + '</li>'
                     }
 
                     jobEntry += '<li><button type="button" class="btn btn-info btn-xs" instance="' + instanceId + '" do="detail">Detail</button></li></ul></a>'
@@ -477,7 +480,7 @@ function hashChange( event )
           {
             if( data )
             {
-              alert( 'Job Action "' + self.attr( 'action' ) + '" Suceeded' );
+              alert( 'Job Action "' + self.attr( 'action' ) + '" Succeeded' );
             } else {
               alert( 'Job Action "' + self.attr( 'action' ) + '" Failed' );
             }
@@ -531,7 +534,7 @@ function hashChange( event )
           if( item.state == 'reported' && ( item.manual || !item.succeeded ) )
           buttons = '<button uri="' + uri + '" action="acknowledge" do="action">Acknowledge</button>';
 
-          jobEntries.append( '<tr><td>' + item.project + '</td><td>' + item.target + '</td><td>' + item.state + '</td><td>' + item.resources + '</td><td>' + item.manual + '</td><td>' + item.succeeded + '</td><td>' + item.score + '</td><td>' + item.created + '</td><td>' + item.updated + '</td><td>' + buttons + '</td><td>' + JSON.stringify( item.package_file_map ) + '</td></tr>' );
+          jobEntries.append( '<tr><td>' + item.project + '</td><td>' + item.target + '</td><td>' + item.state + '</td><td>' + item.resources + '</td><td>' + item.manual + '</td><td>' + item.succeeded + '</td><td>' + item.created + '</td><td>' + item.updated + '</td><td>' + buttons + '</td><td>' + JSON.stringify( item.package_file_map ) + '</td></tr>' );
         }
       }
     ).fail(
@@ -598,7 +601,7 @@ function hashChange( event )
         function( data )
         {
           if( data )
-          alert( 'Job Action "' + self.attr( 'action' ) + '" Suceeded' );
+          alert( 'Job Action "' + self.attr( 'action' ) + '" Succeeded' );
           else
           alert( 'Job Action "' + self.attr( 'action' ) + '" Failed' );
         }
@@ -682,7 +685,7 @@ function loadProjects()
         } else {
           gitIcon = '<i class="fab fa-git fa-lg fa-fw"></i>'
         }
-        projList += '<dl><dt id="project-entry" uri="' + uri + '">' + busy + '&nbsp;<span class="project-name">' + item.name + '</span></dt><dd>' + gitIcon + '</dd><dd><i class="fa fa-calendar-o fa-lg fa-fw"/>&nbsp; ' + projUpdated + '</dd><!--<dd><i class="fa fa-calendar-o fa-fw"/>&nbsp; Created: ' + projCreated + '</dd>--></dl></div>'
+        projList += '<dl><dt id="project-entry" uri="' + uri + '">' + busy + '&nbsp;<span class="project-name">' + item.name + '</span></dt><dd>' + gitIcon + '</dd><dd><i class="fa fa-calendar fa-lg fa-fw"/>&nbsp; ' + projUpdated + '</dd><dd><i class="fa fa-file-export fa-fw"/>&nbsp; ' + item.release_branch + '</dd></dl></div>'
         projectList.append(projList);
         $('#project-list').sortDivs();
       }
