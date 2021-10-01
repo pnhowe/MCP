@@ -96,11 +96,17 @@ class Contractor():
     # pick up a pre-alloc that is still building.  There is also some logic the "release" methods in other places
     # that need re-thinking to match
 
+    # should we throw messages up to `self.resource_instance.release()` in Processor/models.py to skip and come back arround?
+
+    # post a message some where so someone knows we are failing to cleanup
+
+    # deleteStructure can throw `cinp.client.DetailedInvalidRequest: Not Deletable`
+
     foundation = None
     try:
       foundation = self.cinp.get( '/api/v1/Building/Foundation:{0}:'.format( foundation_id ), retry_count=10 )
-    except foundation.NotFound:
-      pass
+    except client.NotFound:
+      pass  # return False?
 
     if foundation is not None:
       if foundation[ 'state' ] == 'built':

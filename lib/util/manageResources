@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from prettytable import PrettyTable
 
 from mcp.Project.models import Project, Build, BuildResource
-from mcp.Resource.models import Site, Network, DynamicResource, DynamicResourceSite
+from mcp.Resource.models import Site, Network, DynamicResource, DynamicResourceSite, StaticResource
 from mcp.lib.t3kton import getContractor
 
 parser = argparse.ArgumentParser( description='resource manager - add/remove sites, networks, resources' )
@@ -36,6 +36,13 @@ task.add_argument( '--dynamic-resource-detach', help='Detach Site/Complex from a
 
 task.add_argument( '--dynamic-resource-build-ahead', help='Set the number of resources to build ahead, name, blueprint, and build-ahead-count, set count to 0 to remove', action='store_true'  )
 
+task.add_argument( '--static-resource-list', help='List the Curent Static Resources', action='store_true' )
+task.add_argument( '--static-resource-add', help='Add a Static Resources, name, description, and group are required', action='store_true' )
+task.add_argument( '--static-resource-remove', help='Remove a Static Resource, this should be the resource name in MCP', metavar='RESOURCE NAME' )
+
+task.add_argument( '--static-resource-attach', help='Attach Site to a Static Resource, name and site are required', action='store_true'  )
+task.add_argument( '--static-resource-detach', help='Detach Site from a Static Resource, name and site are required', action='store_true'  )
+
 # this one is a hack and is temporary until the dynamic/bluprint/stuff mess is figured out
 task.add_argument( '--update-builtin', help='Add the blueprint to the Builtin project', metavar='BLUEPRINT NAME' )
 
@@ -43,6 +50,7 @@ task.add_argument( '--update-builtin', help='Add the blueprint to the Builtin pr
 parser.add_argument( '--name', help='Name of resource' )
 parser.add_argument( '--description', help='Description of resource' )
 parser.add_argument( '--site', help='Site for required operations', metavar='SITE NAME' )
+parser.add_argument( '--group', help='Group Name of resource' )
 parser.add_argument( '--network', help='Network Contractor id for required operations', metavar='NETWORK ID' )
 parser.add_argument( '--address-block', help='Address Block Contractor id for required operations', metavar='ADDRESSBLOCK ID' )
 parser.add_argument( '--monolithic', help='Flag the Network as Monolithic', action='store_true' )
@@ -65,14 +73,14 @@ if args.site:
     sys.exit( 1 )
 
 # list operations
-if args.site_list or args.network_list or args.dynamic_resource_list:
+if args.site_list or args.network_list or args.dynamic_resource_list or args.static_resource_list:
   table = PrettyTable()
   if args.site_list:
     table.field_names = [ 'Name', 'Generic' ]
     for site in Site.objects.all().order_by( 'pk' ):
       table.add_row( [ site.name, site.generic ] )
 
-  if args.network_list:
+  elif args.network_list:
     if site is None:
         print( 'Site Required' )
         sys.exit( 1 )
@@ -81,12 +89,18 @@ if args.site_list or args.network_list or args.dynamic_resource_list:
     for network in Network.objects.filter( site=site ):
       table.add_row( [ network.name, network.size, network.monolithic, network.contractor_addressblock_id, network.contractor_network_id, network.buildjob_set.count() != 0 ] )
 
-  if args.dynamic_resource_list:
+  elif args.dynamic_resource_list:
     table.field_names = [ 'Name', 'Description', 'BluePrint/Build Ahead Count', 'Site/Complex Map' ]
     for resource in DynamicResource.objects.all():
       site_complex_list = [ '{0}:{1}'.format( i.site.name, i.complex_id ) for i in resource.dynamicresourcesite_set.all() ]
       build_ahead_list = [ '{0}:{1}'.format( k, v ) for k, v in resource.build_ahead_count_map.items() ]
       table.add_row( [ resource.name, resource.description, ' '.join( build_ahead_list ), ' '.join( site_complex_list ) ] )
+
+  elif args.static_resource_list:
+    table.field_names = [ 'Name', 'Description', 'Sites', 'Interface Map' ]
+    for resource in StaticResource.objects.all():
+      site_list = [ i.name for i in resource.sites.all() ]
+      table.add_row( [ resource.name, resource.description, ' '.join( site_list ), resource.interface_map ] )
 
   table.sortby = 'Name'
 
@@ -216,11 +230,10 @@ if args.dynamic_resource_add:
   dynamic_resource = DynamicResource()
   dynamic_resource.name = args.name
   dynamic_resource.description = args.description
-  dynamic_resource.build_ahead_count = args.build_ahead_count
   dynamic_resource.full_clean()
   dynamic_resource.save()
 
-  print( 'DynamicResource "{0}" Created.'.format( args.name ) )
+  print( 'Dynamic Resource "{0}" Created.'.format( args.name ) )
   sys.exit( 0 )
 
 if args.dynamic_resource_remove:
@@ -303,6 +316,41 @@ if args.dynamic_resource_build_ahead:
   dynamic_resource.full_clean()
   dynamic_resource.save()
   print( 'Set blueprint "{0}" to count "{1}" in Dynamic Resource "{2}"'.format( args.blueprint, args.build_ahead_count, args.name ) )
+  sys.exit( 0 )
+
+# static resource options
+if args.static_resource_add:
+  if not args.name or not args.description or not args.group:
+    print( 'Name, Description and Group Required' )
+    sys.exit( 1 )
+
+  try:
+    StaticResource.objects.get( name=args.name )
+    print( 'Static Resource with Name "{0}" Already Exists'.format( args.name ) )
+    sys.exit( 1 )
+
+  except StaticResource.DoesNotExist:
+    pass
+
+  static_resource = StaticResource()
+  static_resource.name = args.name
+  static_resource.description = args.description
+  static_resource.group = args.group
+  static_resource.full_clean()
+  static_resource.save()
+
+  print( 'Static Resource "{0}" Created.'.format( args.name ) )
+  sys.exit( 0 )
+
+if args.static_resource_remove:
+  try:
+    static_resource = StaticResource.objects.get( name=args.static_resource_remove )
+  except StaticResource.DoesNotExist:
+    print( 'Static Resource "{0}" not found in MCP'.format( args.static_resource_remove ) )
+    sys.exit( 1 )
+
+  static_resource.delete()
+  print( 'Static Resource "{0}" deleted.'.format( args.static_resource_remove ) )
   sys.exit( 0 )
 
 # the temporary hack

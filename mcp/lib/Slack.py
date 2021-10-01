@@ -60,6 +60,10 @@ class Slack():
       logging.warning( 'Slack: Response not valid JSON.' )
       return
 
-    if 'ok' not in rc:
+    try:
+      if not rc[ 'ok' ]:
+        logging.warning( 'Slack: Unable to post, error: "{0}"'.format( rc.get( 'error', '(UNKNOWN)' ) ) )
+
+    except KeyError:
       logging.warning( 'Slack: Failed to post message {0}'.format( rc ) )
       return

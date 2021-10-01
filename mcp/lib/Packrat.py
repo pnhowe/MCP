@@ -57,6 +57,7 @@ class Packrat():
     for ( tag, info ) in tag_map.items():
       if info[ 'change_control' ]:  # we can't promote these anyway
         continue
+
       results[ tag ] = info[ 'required' ]
 
     return results

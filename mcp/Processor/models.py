@@ -698,6 +698,9 @@ class BuildJobResourceInstance( models.Model ):
     """
     Get the Host detail, including info from Contractor, this is a bit expensive, use conservitivally.
     """
+    if self.resource_instance is None:
+      return { 'hostname': self.hostname, 'structure_id': None }
+
     result = {
                'structure_id': self.resource_instance.contractor_structure_id,
                'hostname': self.hostname
