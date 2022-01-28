@@ -40,7 +40,7 @@ var cinpBuilder = {};
         dataType: 'json',
         headers: $.extend( {}, headers,
         {
-          'CInP-Version': '0.9'
+          'CInP-Version': '1.0'
         } ),
         data: JSON.stringify( data ),
         contentType: 'application/json',

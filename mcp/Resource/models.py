@@ -151,12 +151,12 @@ class StaticResource( Resource ):
   """
 StaticResource
   """
-  sites = models.ManyToManyField( Site )
+  site = models.ForeignKey( Site, on_delete=models.PROTECT )
   group_name = models.CharField( max_length=50 )
   interface_map = MapField( blank=True )
 
   def available( self, site, quantity, interface_map ):
-    if site not in self.sites:
+    if site != self.site:
       return False
 
     if self.statieresourceinstance_set.filter( buildjobresourceinstance__buildjob__isnull=True, site=site ).order_by( 'pk' ).iterator().count() >= quantity:

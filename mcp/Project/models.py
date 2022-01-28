@@ -5,6 +5,7 @@ import difflib
 from datetime import datetime
 
 from django.db import models
+from django.utils import timezone
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.conf import settings
 
@@ -152,7 +153,7 @@ This is a Generic Project
   release_branch = models.CharField( max_length=BRANCH_NAME_LENGTH, default='master' )
   local_path = models.CharField( max_length=150, null=True, blank=True, editable=False )
   build_counter = models.IntegerField( default=0 )
-  last_checked = models.DateTimeField( default=datetime.min )
+  last_checked = models.DateTimeField( default=datetime.min.replace( tzinfo=timezone.utc ) )
   max_commit_count = models.IntegerField( default=50 )
   created = models.DateTimeField( editable=False, auto_now_add=True )
   updated = models.DateTimeField( editable=False, auto_now=True )
