@@ -790,6 +790,16 @@ class BuildJobResourceInstance( models.Model ):
     self.full_clean()
     self.save()
 
+  def clean( self, *args, **kwargs ):
+    super().clean( *args, **kwargs )
+    errors = {}
+
+    if self.state not in INSTANCE_STATE_LIST:
+      errors[ 'state' ] = 'Invalid'
+
+    if errors:
+      raise ValidationError( errors )
+
   @cinp.check_auth()
   @staticmethod
   def checkAuth( user, verb, id_list, action=None ):

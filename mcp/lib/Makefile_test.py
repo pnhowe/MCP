@@ -71,6 +71,7 @@ def test_autoBuilds( mocker ):
   popen.return_value = FakeProc( 0, 'testa testb', '' )
   assert m.autoBuilds() == [ 'testa', 'testb' ]
 
+  assert True == False
   popen.return_value = FakeProc( 0, 'testa\ntestb', '' )
   assert m.autoBuilds() == [ 'testa', 'testb' ]
 

@@ -39,7 +39,7 @@ dist-clean: clean
 .PHONY:: all install version clean dist-clean
 
 test-blueprints:
-	echo ubuntu-bionic-base
+	echo ubuntu-focal-base
 
 test-requires:
 	echo flake8 python3-pip python3-django python3-psycopg2 python3-cinp python3-dev python3-pytest python3-pytest-cov python3-pytest-django python3-pytest-mock postgresql python3-github python3-gitlab
@@ -59,7 +59,7 @@ test:
 .PHONY:: test-blueprints test-requires lint test
 
 dpkg-blueprints:
-	echo ubuntu-bionic-base
+	echo ubuntu-focal-base
 
 dpkg-requires:
 	echo dpkg-dev debhelper python3-dev python3-setuptools
@@ -69,12 +69,12 @@ dpkg:
 	touch dpkg
 
 dpkg-file:
-	echo $(shell ls ../mcp_*.deb):bionic
+	echo $(shell ls ../mcp_*.deb):focal
 
 .PHONY:: dpkg-blueprints dpkg-requires dpkg-file
 
 #doc-blueprints:
-#	echo ubuntu-bionic-base
+#	echo ubuntu-focal-base
 
 doc-requires:
 	$(MAKE) -C docs requires
@@ -97,7 +97,7 @@ installcheck-depends:
 	echo mcp:dev
 
 installcheck-resources:
-	echo mcp:{ \"resource\": \"vm\", \"blueprint\": \"ubuntu-bionic-base\", \"config_values\": { \"\<repo_list\": [ { \"distribution\":\"{{ distro_version }}\", \"type\":\"apt\" ,\"uri\":\"http://repo/apt-dev\", \"components\":[ \"main\" ], \"proxy\":\"local\", \"key_uri\": \"http://repo/repo-key\" } ] } }
+	echo mcp:{ \"resource\": \"vm\", \"blueprint\": \"ubuntu-focal-base\", \"config_values\": { \"\<repo_list\": [ { \"distribution\":\"{{ distro_version }}\", \"type\":\"apt\" ,\"uri\":\"http://repo/apt-dev\", \"components\":[ \"main\" ], \"proxy\":\"local\", \"key_uri\": \"http://repo/repo-key\" } ] } }
 
 installcheck:
 	apt install -y mcp
