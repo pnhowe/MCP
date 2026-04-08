@@ -16,6 +16,7 @@ import glob
 import shutil
 import socket
 import json
+import asyncio
 import cinp
 import re
 
@@ -34,7 +35,7 @@ from mcp.lib.Packrat import getPackrat
 from mcp.lib.SCM import SCMException
 
 WORK_DIR = '/tmp/rinzler'
-PID_FILE = '/var/run/rinzler.pid'
+PID_FILE = '/var/run/mcp/rinzler.pid'
 
 name_regex = re.compile( r'^[a-zA-Z0-9][a-zA-Z0-9_\-]*$' )  # from contractor/fields.py
 
@@ -63,24 +64,15 @@ tmp = open( PID_FILE, 'w' )
 tmp.write( '{0}\n'.format( os.getpid() ) )
 tmp.close()
 
-try:
-  slack = getSlack( 'rinzler' )
-  contractor = getContractor()
-except Exception as e:
-  logging.exception( 'Exception "{0}" trying to connect to contractor and or slack, try again later'.format( e ) )
-  os.unlink( PID_FILE )
-  logging.shutdown()
-  sys.exit( 0 )
 
-
-def _checkBluePrint( blueprint ):
+async def _checkBluePrint( blueprint, contractor ):
   global blueprint_cache_map
 
   if blueprint in blueprint_cache_map:
     return blueprint_cache_map[ blueprint ]
 
   try:
-    contractor.getBluePrint( blueprint )
+    await contractor.getBluePrint( blueprint )
     blueprint_cache_map[ blueprint ] = True
   except cinp.client.NotFound:
     blueprint_cache_map[ blueprint ] = False
@@ -138,7 +130,7 @@ def _cleanInterfaceMap( interface_map ):
   return result
 
 
-def _makeBuild( build_name, project, manual ):
+async def _makeBuild( build_name, project, manual, make, contractor, packrat ):
   options = make.options( build_name )  # if these have a makefile exception it should roll up
   network_list = make.networks( build_name )
   resource_list = make.resources( build_name )
@@ -194,17 +186,14 @@ def _makeBuild( build_name, project, manual ):
         Package.objects.get( name=package_name )
 
       except Package.DoesNotExist:
-        packrat = getPackrat()
         packrat_package_uri = '/api/v2/Package/Package:{0}:'.format( package_name )
         try:
-          packrat.cinp.get( packrat_package_uri )
+          await packrat.cinp.get( packrat_package_uri )
         except cinp.client.NotFound:
           packrat_package_uri = None
 
-        packrat.logout()
-
         if packrat_package_uri is None:
-          logging.warn( 'Package "{0}" for dependancy for build "{1}" not found in Packrat, skipping dependancy.'.format( package_name, build_name ) )
+          logging.warning( 'Package "{0}" for dependancy for build "{1}" not found in Packrat, skipping dependancy.'.format( package_name, build_name ) )
           continue
 
         package = Package( name=package_name, packrat_id=packrat_package_uri )
@@ -271,7 +260,7 @@ def _makeBuild( build_name, project, manual ):
       build.delete()
       return 'Resource "{0}" does not exist, killing the build.'.format( data[ 'resource' ] )
 
-    if not _checkBluePrint( data[ 'blueprint' ] ):
+    if not await _checkBluePrint( data[ 'blueprint' ], contractor ):
       build.delete()
       return 'Blueprint "{0}" not found, killing the build.'.format( data[ 'blueprint' ] )
 
@@ -333,7 +322,7 @@ def _makeBuild( build_name, project, manual ):
   return None
 
 
-def _failCommit( commit, msg=None, exception=None ):
+def _failCommit( commit, slack, msg=None, exception=None ):
   if exception is not None:
     msg = str( exception )
 
@@ -348,231 +337,251 @@ def _failCommit( commit, msg=None, exception=None ):
     slack.post_message( 'Unable to Fail Commit, commit "{0}" of Project "{1}" Branch "{2}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
 
 
-for project in Project.objects.all().order_by( 'last_checked' ):
-  # skip internal projects
-  if project.name.startswith( '_' ):
-    continue
+async def main():
+  global blueprint_cache_map
 
-  # skip any busy projects
-  if project.busy:
-    continue
-
-  if project.commit_set.all().count() > project.max_commit_count:
-    # just delete the last one, this get's called enough it will eventually get the list trimmed down
-    commit = project.commit_set.all().order_by( 'created' )[0]
-    commit.promotion_set.all().delete()
-    commit.delete()
-
-  url = project.clone_git_url
-
-  if url is None:  # for now we only support Git based projects
-    continue
-
-  # it's good let's do this
-  logging.info( 'Checking project "{0}"'.format( project.name ) )
-
-  if not project.local_path:
-    project.local_path = '{0}/{1}'.format( project.pk, os.path.basename( url ) )
-    logging.debug( 'Creating "{0}" in "{1}"...'.format( project.name, project.local_path ) )
-
-    git = project.internal_git  # can't get internal_git until after local_path is set
-    git.setup( url )  # TODO: make sure we can check things out before saving the path
-    project.full_clean()
-    project.save()
-
-  else:
-    git = project.internal_git
-
-  logging.debug( 'Updating "{0}"...'.format( project.name ) )
-  git.update()
-  logging.debug( 'Pruning old branches "{0}"...'.format( project.name ) )
-  git.pruneOldBranches()
+  slack = getSlack( 'rinzler' )
 
   try:
-    scm = project.scm
-  except ( socket.timeout, socket.error, SSLError ):
-    logging.warning( 'Connection Error connecting to remote scm, will try again later.' )
-    continue
+    async with getContractor() as contractor, getPackrat() as packrat:
+      await _run( slack, contractor, packrat )
+  except Exception as e:
+    logging.exception( 'Exception "{0}" trying to connect to contractor and or slack, try again later'.format( e ) )
+    os.unlink( PID_FILE )
+    logging.shutdown()
+    sys.exit( 0 )
 
-  try:
-    merge_list = scm.getMergeList()
-  except ( socket.timeout, socket.error, SSLError ):
-    logging.warning( 'Connection Error getting Merge List, will try again later.' )
-    continue
 
-  for branch in git.localRefMap().keys():
-    merge = scm.branchToMerge( branch )
-    if merge is not None and merge not in merge_list:
-      logging.debug( 'Cleaning up branch "{0}"'.format( branch ) )
-      git.removeBranch( branch )
-
-  for merge in merge_list:
-    branch_name = scm.mergeToBranch( merge )
-    if project.commit_set.filter( branch=branch_name, done_at__isnull=True ).count() > 0:
+async def _run( slack, contractor, packrat ):
+  for project in Project.objects.all().order_by( 'last_checked' ):
+    # skip internal projects
+    if project.name.startswith( '_' ):
       continue
 
-    logging.info( '  Pulling MR/PR "{0}"'.format( merge ) )
-    git.fetchBranch( scm.mergeToRef( merge ), branch_name )
-
-  branch_map = git.localRefMap()
-
-  logging.debug( 'Branches: "{0}"'.format( branch_map ) )
-
-  for branch in branch_map.keys():  # yes, this will go over the MR/PRs again, but they allready have commits, mabey some day optimize?
-    try:
-      commit = Commit.objects.get( project=project, branch=branch, commit=branch_map[ branch ] )
-      continue  # allready there, don't need to worry about it
-    except Commit.DoesNotExist:
-      pass
-
-    logging.info( 'New Commit "{0}" on Branch "{1}" of Project "{2}"...'.format( branch_map[ branch ], branch, project.name ) )
-    slack.post_message( 'New Commit "{0}" on Branch "{1}" of Project "{2}".'.format( branch_map[ branch ], branch, project.name ), slack.INFO )
-
-    git.checkout( WORK_DIR, branch )
-
-    commit = Commit()
-    commit.project = project
-    commit.branch = branch
-    commit.commit = branch_map[ branch ]
-
-    work_dir = glob.glob( '{0}/*'.format( WORK_DIR ) )[0]
-
-    if not os.path.exists( os.path.join( work_dir, 'Makefile' ) ):
-      logging.warning( 'No Makefile, ignorning commit.' )
-      _failCommit( commit, 'No Makefile' )
+    # skip any busy projects
+    if project.busy:
       continue
 
-    if branch == project.release_branch:
-      project.build_counter += 1
+    if project.commit_set.all().count() > project.max_commit_count:
+      # just delete the last one, this get's called enough it will eventually get the list trimmed down
+      commit = project.commit_set.all().order_by( 'created' )[0]
+      commit.promotion_set.all().delete()
+      commit.delete()
+
+    url = project.clone_git_url
+
+    if url is None:  # for now we only support Git based projects
+      continue
+
+    # it's good let's do this
+    logging.info( 'Checking project "{0}"'.format( project.name ) )
+
+    if not project.local_path:
+      project.local_path = '{0}/{1}'.format( project.pk, os.path.basename( url ) )
+      if not project.local_path.endswith( '.git' ):
+        project.local_path += '.git'
+
+      logging.debug( 'Creating "{0}" in "{1}"...'.format( project.name, project.local_path ) )
+
+      git = project.internal_git  # can't get internal_git until after local_path is set
+      git.setup( url )  # TODO: make sure we can check things out before saving the path
       project.full_clean()
       project.save()
 
-    if commit.branch == commit.project.release_branch:
-      commit.build_name = str( commit.project.build_counter )
     else:
-      commit.build_name = '{0}-{1}'.format( commit.project.build_counter, commit.branch )
+      git = project.internal_git
 
-    make = Makefile( work_dir, commit.build_name )
+    logging.debug( 'Updating "{0}"...'.format( project.name ) )
+    git.update()
+    logging.debug( 'Pruning old branches "{0}"...'.format( project.name ) )
+    git.pruneOldBranches()
+
     try:
-      make.lint()
-    except MakeException as e:
-      logging.error( 'Makefile does not lint, ignorning commit.' )
-      _failCommit( commit, 'Makefile does not lint', e )
+      scm = project.scm
+    except ( socket.timeout, socket.error, SSLError ):
+      logging.warning( 'Connection Error connecting to remote scm, will try again later.' )
       continue
 
     try:
-      commit.version = make.version()
-    except MakeException as e:
-      logging.error( 'Unable to retrieve Version, ignorning commit.' )
-      _failCommit( commit, 'Unable to retrieve Version', e )
+      merge_list = scm.getMergeList()
+    except ( socket.timeout, socket.error, SSLError ):
+      logging.warning( 'Connection Error getting Merge List, will try again later.' )
       continue
 
-    try:
-      blueprint_list = make.testBluePrints()
-    except MakeException as e:
-      logging.error( 'Error Retreiving Test BluePrints from Makefile, ignorning commit.' )
-      _failCommit( commit, 'Error Retreiving Test BluePrints from Makefile', e )
-      continue
+    for branch in git.localRefMap().keys():
+      merge = scm.branchToMerge( branch )
+      if merge is not None and merge not in merge_list:
+        logging.debug( 'Cleaning up branch "{0}"'.format( branch ) )
+        git.removeBranch( branch )
 
-    commit.lint_results = dict( zip( blueprint_list, [ dict() for _ in range( 0, len( blueprint_list ) ) ] ) )
-    commit.test_results = commit.lint_results
-    commit.build_results = {}
-
-    logging.info( 'Adding Package Build...' )
-
-    for tmp in ( 'dpkg', 'rpm', 'respkg', 'resource' ):
-      try:
-        blueprint_list = make.packageBluePrints( tmp )
-      except MakeException as e:
-        logging.error( 'Error Retreiving Packaging BluePrints from Makefile, ignorning commit.' )
-        _failCommit( commit, 'Error Retreiving Packaging BluePrints from Makefile', e )
+    for merge in merge_list:
+      branch_name = scm.mergeToBranch( merge )
+      if project.commit_set.filter( branch=branch_name, done_at__isnull=True ).count() > 0:
         continue
 
-      if blueprint_list:
-        commit.build_results[ tmp ] = dict( zip( blueprint_list, [ dict() for _ in range( 0, len( blueprint_list ) ) ] ) )
+      logging.info( '  Pulling MR/PR "{0}"'.format( merge ) )
+      git.fetchBranch( scm.mergeToRef( merge ), branch_name )
 
-    if branch == project.release_branch:
-      logging.info( 'Adding Doc Build...' )
+    branch_map = git.localRefMap()
+
+    logging.debug( 'Branches: "{0}"'.format( branch_map ) )
+
+    for branch in branch_map.keys():  # yes, this will go over the MR/PRs again, but they allready have commits, mabey some day optimize?
       try:
-        blueprint_list = make.docBluePrints()
-      except MakeException as e:
-        logging.error( 'Error Retreiving Documentation BluePrints from Makefile, ignorning commit.' )
-        _failCommit( commit, 'Error Retreiving Documentation BluePrints from Makefile', e )
+        commit = Commit.objects.get( project=project, branch=branch, commit=branch_map[ branch ] )
+        continue  # allready there, don't need to worry about it
+      except Commit.DoesNotExist:
+        pass
+
+      logging.info( 'New Commit "{0}" on Branch "{1}" of Project "{2}"...'.format( branch_map[ branch ], branch, project.name ) )
+      slack.post_message( 'New Commit "{0}" on Branch "{1}" of Project "{2}".'.format( branch_map[ branch ], branch, project.name ), slack.INFO )
+
+      git.checkout( WORK_DIR, branch )
+
+      commit = Commit()
+      commit.project = project
+      commit.branch = branch
+      commit.commit = branch_map[ branch ]
+
+      work_dir = glob.glob( '{0}/*'.format( WORK_DIR ) )[0]
+
+      if not os.path.exists( os.path.join( work_dir, 'Makefile' ) ):
+        logging.warning( 'No Makefile, ignorning commit.' )
+        _failCommit( commit, slack, 'No Makefile' )
         continue
 
-      commit.doc_results = dict( zip( blueprint_list, [ dict() for _ in range( 0, len( blueprint_list ) ) ] ) )
+      if branch == project.release_branch:
+        project.build_counter += 1
+        project.full_clean()
+        project.save()
 
-    commit.build_results = commit.build_results
+      if commit.branch == commit.project.release_branch:
+        commit.build_name = str( commit.project.build_counter )
+      else:
+        commit.build_name = '{0}-{1}'.format( commit.project.build_counter, commit.branch )
 
-    if branch == project.release_branch:
-      logging.info( 'Updating Builds info...' )
+      make = Makefile( work_dir, commit.build_name )
       try:
-        auto_build_list = make.autoBuilds()
+        make.lint()
       except MakeException as e:
-        logging.error( 'Error Retreiving Auto Builds from Makefile, ignorning commit.' )
-        _failCommit( commit, 'Error Retreiving Auto Builds from Makefile', e )
+        logging.error( 'Makefile does not lint, ignorning commit.' )
+        _failCommit( commit, slack, 'Makefile does not lint', e )
         continue
 
       try:
-        manual_build_list = make.manualBuilds()
+        commit.version = make.version()
       except MakeException as e:
-        logging.error( 'Error Retreiving Manual Builds from Makefile, ignorning commit.' )
-        _failCommit( commit, 'Error Retreiving Manual Builds from Makefile', e )
+        logging.error( 'Unable to retrieve Version, ignorning commit.' )
+        _failCommit( commit, slack, 'Unable to retrieve Version', e )
         continue
 
-      logging.debug( 'Auto Builds "{0}".'.format( auto_build_list ) )
-      logging.debug( 'Manual Builds "{0}".'.format( manual_build_list ) )
+      try:
+        blueprint_list = make.testBluePrints()
+      except MakeException as e:
+        logging.error( 'Error Retreiving Test BluePrints from Makefile, ignorning commit.' )
+        _failCommit( commit, slack, 'Error Retreiving Test BluePrints from Makefile', e )
+        continue
 
-      existing_builds = [ i.name for i in project.build_set.all() ]
-      for build_name in set( existing_builds ) - set( auto_build_list + manual_build_list ):
-        build = project.build_set.get( name=build_name )
+      commit.lint_results = dict( zip( blueprint_list, [ dict() for _ in range( 0, len( blueprint_list ) ) ] ) )
+      commit.test_results = commit.lint_results
+      commit.build_results = {}
+
+      logging.info( 'Adding Package Build...' )
+
+      for tmp in ( 'dpkg', 'rpm', 'respkg', 'resource' ):
         try:
-          build.delete()  # this could cause an error if there is a build curently operating, if so, punt to later
-        except ProtectedError:
-          logging.warning( 'Build "{0}" is no longer defined, however it is still in use, will try to delete again next time.'.format( build_name ) )
-          pass  # can't delete now, will try on next update
+          blueprint_list = make.packageBluePrints( tmp )
+        except MakeException as e:
+          logging.error( 'Error Retreiving Packaging BluePrints from Makefile, ignorning commit.' )
+          _failCommit( commit, slack, 'Error Retreiving Packaging BluePrints from Makefile', e )
+          continue
+
+        if blueprint_list:
+          commit.build_results[ tmp ] = dict( zip( blueprint_list, [ dict() for _ in range( 0, len( blueprint_list ) ) ] ) )
+
+      if branch == project.release_branch:
+        logging.info( 'Adding Doc Build...' )
+        try:
+          blueprint_list = make.docBluePrints()
+        except MakeException as e:
+          logging.error( 'Error Retreiving Documentation BluePrints from Makefile, ignorning commit.' )
+          _failCommit( commit, slack, 'Error Retreiving Documentation BluePrints from Makefile', e )
+          continue
+
+        commit.doc_results = dict( zip( blueprint_list, [ dict() for _ in range( 0, len( blueprint_list ) ) ] ) )
+
+      commit.build_results = commit.build_results
+
+      if branch == project.release_branch:
+        logging.info( 'Updating Builds info...' )
+        try:
+          auto_build_list = make.autoBuilds()
+        except MakeException as e:
+          logging.error( 'Error Retreiving Auto Builds from Makefile, ignorning commit.' )
+          _failCommit( commit, slack, 'Error Retreiving Auto Builds from Makefile', e )
+          continue
+
+        try:
+          manual_build_list = make.manualBuilds()
+        except MakeException as e:
+          logging.error( 'Error Retreiving Manual Builds from Makefile, ignorning commit.' )
+          _failCommit( commit, slack, 'Error Retreiving Manual Builds from Makefile', e )
+          continue
+
+        logging.debug( 'Auto Builds "{0}".'.format( auto_build_list ) )
+        logging.debug( 'Manual Builds "{0}".'.format( manual_build_list ) )
+
+        existing_builds = [ i.name for i in project.build_set.all() ]
+        for build_name in set( existing_builds ) - set( auto_build_list + manual_build_list ):
+          build = project.build_set.get( name=build_name )
+          try:
+            build.delete()  # this could cause an error if there is a build curently operating, if so, punt to later
+          except ProtectedError:
+            logging.warning( 'Build "{0}" is no longer defined, however it is still in use, will try to delete again next time.'.format( build_name ) )
+            pass  # can't delete now, will try on next update
+
+        try:
+          build = None
+          for build in auto_build_list:
+            msg = await _makeBuild( build, project, False, make, contractor, packrat )
+            if msg is not None:
+              logging.error( msg )
+              _failCommit( commit, slack, msg )  # Yes, this should kill the commit, auto builds need to be fixed, don't want something getting auto promoted acidentally
+              continue
+
+          for build in manual_build_list:
+            msg = await _makeBuild( build, project, True, make, contractor, packrat )
+            if msg is not None:
+              logging.error( msg )
+              _failCommit( commit, slack, msg )  # TODO: should manual builds fail the commit?
+              continue
+
+        except MakeException as e:
+          logging.exception( 'Makefile Error making build "{0}", ignorning commit.'.format( build ) )
+          _failCommit( commit, slack, 'Makefile Error making build "{0}", ignorning commit.'.format( build ), e )
+          continue
+
+        except Exception as e:
+          logging.exception( 'Error making build "{0}": "{1}", ignorning commit.'.format( build, e ) )
+          _failCommit( commit, slack, 'Error making build "{0}": "{1}", ignorning commit.'.format( build, e ) )
+          continue
+
+      logging.debug( 'Cleaning up work dir.' )
+      shutil.rmtree( WORK_DIR )
+      commit.full_clean()
+      commit.save()
 
       try:
-        build = None
-        for build in auto_build_list:
-          msg = _makeBuild( build, project, False )
-          if msg is not None:
-            logging.error( msg )
-            _failCommit( commit, msg )  # Yes, this should kill the commit, auto builds need to be fixed, don't want something getting auto promoted acidentally
-            continue
+        commit.postInProcess()
+      except SCMException:
+        slack.post_message( 'Unable to flag Commit as in process, Commit "{0}" of Project "{1}" Branch "{2}", job will still run.'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
 
-        for build in manual_build_list:
-          msg = _makeBuild( build, project, True )
-          if msg is not None:
-            logging.error( msg )
-            _failCommit( commit, msg )  # TODO: should manual builds fail the commit?
-            continue
+    project.last_checked = datetime.now( timezone.utc )
+    project.full_clean()
+    project.save()
 
-      except MakeException as e:
-        logging.exception( 'Makefile Error making build "{0}", ignorning commit.'.format( build ) )
-        _failCommit( commit, 'Makefile Error making build "{0}", ignorning commit.'.format( build ), e )
-        continue
 
-      except Exception as e:
-        logging.exception( 'Error making build "{0}": "{1}", ignorning commit.'.format( build, e ) )
-        _failCommit( commit, 'Error making build "{0}": "{1}", ignorning commit.'.format( build, e ) )
-        continue
-
-    logging.debug( 'Cleaning up work dir.' )
-    shutil.rmtree( WORK_DIR )
-    commit.full_clean()
-    commit.save()
-
-    try:
-      commit.postInProcess()
-    except SCMException:
-      slack.post_message( 'Unable to flag Commit as in process, Commit "{0}" of Project "{1}" Branch "{2}", job will still run.'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
-
-  project.last_checked = datetime.now( timezone.utc )
-  project.full_clean()
-  project.save()
-
-os.unlink( PID_FILE )
+asyncio.run( main() )
 logging.info( 'Done!' )
 logging.shutdown()
 sys.exit( 0 )

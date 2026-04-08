@@ -30,6 +30,7 @@ case "$1" in
         fi
 
         mkdir -p /var/www/git
+        mkdir -p /var/run/mcp
 
         a2ensite mcp.conf
         a2enmod wsgi

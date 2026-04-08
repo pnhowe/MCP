@@ -25,7 +25,7 @@ from mcp.lib.Slack import getSlack
 CLEANUP_DELAY = 0.17  # 10 min
 AUTO_ACKNOLEDGE_DELAY = 24.0
 
-PID_FILE = '/var/run/sark.pid'
+PID_FILE = '/var/run/mcp/sark.pid'
 
 logging.basicConfig()
 logger = logging.getLogger()

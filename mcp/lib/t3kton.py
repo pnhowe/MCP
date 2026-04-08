@@ -1,8 +1,10 @@
+import logging
+
 from django.conf import settings
 
-from cinp import client
+from cinp.client import CInP, NotFound, InvalidSession
 
-CONTRACTOR_API_VERSION = '0.9'
+CONTRACTOR_API_VERSION = '1.0'
 
 
 def getContractor():
@@ -10,27 +12,56 @@ def getContractor():
 
 
 class Contractor():
+  def relogin( func ):
+    async def wrapper( self, *args, **kwargs ):
+      try:
+        return await func( self, *args, **kwargs )
+      except InvalidSession:
+        logging.debug( 'contractor: got invalid session, re-logging in and re-trying' )
+        await self.logout()
+        await self.login()
+        return await func( self, *args, **kwargs )
+
+    return wrapper
+
   def __init__( self, host, proxy, username, password ):
     super().__init__()
+    self.host = host
+    self.proxy = proxy
     self.username = username
-    self.cinp = client.CInP( host, '/api/v1/', proxy )
+    self.password = password
 
-    root, _ = self.cinp.describe( '/api/v1/', retry_count=10 )
+    self.cinp = None
+    self.token = None
+
+  async def __aenter__( self ):
+    self.cinp = await CInP( host=self.host, root_path='/api/v1/', proxy=self.proxy ).__aenter__()
+
+    root, _ = await self.cinp.describe( '/api/v1/', retry_count=30 )  # be very tollerant for the initial describe, let things settle
     if root[ 'api-version' ] != CONTRACTOR_API_VERSION:
       raise Exception( 'Expected API version "{0}" found "{1}"'.format( CONTRACTOR_API_VERSION, root[ 'api-version' ] ) )
 
-    self.token = self.cinp.call( '/api/v1/Auth/User(login)', { 'username': self.username, 'password': password }, retry_count=10 )
-    self.cinp.setAuth( username, self.token )
+    await self.login()
+    return self
 
-  def logout( self ):
+  async def __aexit__( self, exc_type, exc, tb ):
+    await self.logout()
+    await self.cinp.__aexit__( exc_type, exc, tb )
+    self.cinp = None
+
+  async def login( self ):
+    self.token = await self.cinp.call( '/api/v1/Auth/User(login)', { 'username': self.username, 'password': self.password }, retry_count=10 )
+    self.cinp.setAuth( self.username, self.token )
+
+  async def logout( self ):
     try:
-      self.cinp.call( '/api/v1/Auth/User(logout)', { 'token': self.token }, retry_count=10 )
-    except client.InvalidSession:
+      await self.cinp.call( '/api/v1/Auth/User(logout)', { 'token': self.token }, retry_count=10  )
+    except InvalidSession:
       pass
     self.cinp.setAuth()
     self.token = None
 
-  def allocateDynamicResource( self, site_id, complex_id, blueprint_id, config_values, interface_map, hostname ):
+  async def allocateDynamicResource( self, site_id, complex_id, blueprint_id, config_values, interface_map, hostname ):
     complex_uri = '/api/v1/Building/Complex:{0}:'.format( complex_id )
     foundation = None
     structure = None
@@ -72,21 +103,21 @@ class Contractor():
 
     return ( self.cinp.uri.extractIds( foundation )[0], self.cinp.uri.extractIds( structure )[0] )
 
-  def buildDynamicResource( self, foundation_id, structure_id=None ):
-    self.createFoundation( foundation_id )
+  async def buildDynamicResource( self, foundation_id, structure_id=None ):
+    await self.createFoundation( foundation_id )
     if structure_id is not None:
-      self.createStructure( structure_id )
+      await self.createStructure( structure_id )
 
-  def releaseDynamicResource( self, foundation_id, structure_id ):
+  async def releaseDynamicResource( self, foundation_id, structure_id ):
     structure = None
     try:
-      structure = self.cinp.get( '/api/v1/Building/Structure:{0}:'.format( structure_id ), retry_count=10 )
-    except client.NotFound:
+      structure = await self.cinp.get( '/api/v1/Building/Structure:{0}:'.format( structure_id ), retry_count=10 )
+    except NotFound:
       pass
 
     if structure is not None:
       if structure[ 'state' ] == 'built':
-        self.destroyStructure( structure_id )
+        await self.destroyStructure( structure_id )
       else:
         self.deleteStructure( structure_id )
         # return False ?
@@ -104,71 +135,71 @@ class Contractor():
 
     foundation = None
     try:
-      foundation = self.cinp.get( '/api/v1/Building/Foundation:{0}:'.format( foundation_id ), retry_count=10 )
-    except client.NotFound:
+      foundation = await self.cinp.get( '/api/v1/Building/Foundation:{0}:'.format( foundation_id ), retry_count=10 )
+    except NotFound:
       pass  # return False?
 
     if foundation is not None:
       if foundation[ 'state' ] == 'built':
-        self.destroyFoundation( foundation_id )
+        await self.destroyFoundation( foundation_id )
       else:
-        self.deleteFoundation( foundation_id )
+        await self.deleteFoundation( foundation_id )
         # return False ?
 
     return True
 
-  def deleteDynamicResource( self, foundation_id, structure_id ):
+  async def deleteDynamicResource( self, foundation_id, structure_id ):
     try:
-       self.deleteStructure( structure_id )
-    except client.NotFound:
+       await self.deleteStructure( structure_id )
+    except NotFound:
       pass
 
     try:
-      self.deleteFoundation( foundation_id )
-    except client.NotFound:
+      await self.deleteFoundation( foundation_id )
+    except NotFound:
       pass
 
-  def getFullConfig( self, structure_id ):
-    return self.cinp.call( '/api/v1/Building/Structure:{0}:(getConfig)'.format( structure_id ), {}, retry_count=10 )
+  async def getFullConfig( self, structure_id ):
+    return await self.cinp.call( '/api/v1/Building/Structure:{0}:(getConfig)'.format( structure_id ), {}, retry_count=10 )
 
-  def updateConfig( self, structure_id, config_values, hostname ):
+  async def updateConfig( self, structure_id, config_values, hostname ):
     data = {}
     data[ 'config_values' ] = config_values
     data[ 'hostname' ] = hostname
-    self.cinp.update( '/api/v1/Building/Structure:{0}:'.format( structure_id ), data, retry_count=10 )
+    await self.cinp.update( '/api/v1/Building/Structure:{0}:'.format( structure_id ), data, retry_count=10 )
 
-  def allocateStaticResource( self, structure_id, blueprint_id, config_values, hostname ):
+  async def allocateStaticResource( self, structure_id, blueprint_id, config_values, hostname ):
     data = {}
     data[ 'blueprint' ] = '/api/v1/Blueprint/StructureBlueprint:{0}'.format( blueprint_id )
     data[ 'config_values' ] = config_values
     data[ 'hostname' ] = hostname
-    self.cinp.update( '/api/v1/Building/Structure:{0}:'.format( structure_id ), data, retry_count=10 )
+    await self.cinp.update( '/api/v1/Building/Structure:{0}:'.format( structure_id ), data, retry_count=10 )
 
-  def buildStaticResource( self, structure_id ):
-    self.createStructure( structure_id )
+  async def buildStaticResource( self, structure_id ):
+    await self.createStructure( structure_id )
 
-  def releaseStaticResource( self, structure_id ):
-    self.destroyStructure( structure_id )
+  async def releaseStaticResource( self, structure_id ):
+    await self.destroyStructure( structure_id )
 
-  def createFoundation( self, id ):
-    self.cinp.call( '/api/v1/Building/Foundation:{0}:(doCreate)'.format( id ), {}, retry_count=10 )
+  async def createFoundation( self, id ):
+    await self.cinp.call( '/api/v1/Building/Foundation:{0}:(doCreate)'.format( id ), {}, retry_count=10 )
 
-  def createStructure( self, id ):
-    self.cinp.call( '/api/v1/Building/Structure:{0}:(doCreate)'.format( id ), {}, retry_count=10 )
+  async def createStructure( self, id ):
+    await self.cinp.call( '/api/v1/Building/Structure:{0}:(doCreate)'.format( id ), {}, retry_count=10 )
 
-  def destroyFoundation( self, id ):
-    self.cinp.call( '/api/v1/Building/Foundation:{0}:(doDestroy)'.format( id ), {}, retry_count=10 )
+  async def destroyFoundation( self, id ):
+    await self.cinp.call( '/api/v1/Building/Foundation:{0}:(doDestroy)'.format( id ), {}, retry_count=10 )
 
-  def destroyStructure( self, id ):
-    self.cinp.call( '/api/v1/Building/Structure:{0}:(doDestroy)'.format( id ), {}, retry_count=10 )
+  async def destroyStructure( self, id ):
+    await self.cinp.call( '/api/v1/Building/Structure:{0}:(doDestroy)'.format( id ), {}, retry_count=10 )
 
-  def deleteFoundation( self, id ):
-    self.cinp.delete( '/api/v1/Building/Foundation:{0}:'.format( id ), retry_count=10 )
+  async def deleteFoundation( self, id ):
+    await self.cinp.delete( '/api/v1/Building/Foundation:{0}:'.format( id ), retry_count=10 )
 
-  def deleteStructure( self, id ):
-    self.cinp.delete( '/api/v1/Building/Structure:{0}:'.format( id ), retry_count=10 )
+  async def deleteStructure( self, id ):
+    await self.cinp.delete( '/api/v1/Building/Structure:{0}:'.format( id ), retry_count=10 )
 
-  def registerWebHook( self, instance, on_build, foundation_id=None, structure_id=None ):
+  async def registerWebHook( self, instance, on_build, foundation_id=None, structure_id=None ):
     data = {}
     data[ 'one_shot' ] = True
     data[ 'extra_data' ] = { 'cookie': instance.cookie }
@@ -191,23 +222,23 @@ class Contractor():
     else:
       data[ 'url' ] = '{0}/api/v1/Processor/BuildJobResourceInstance:{1}:(signalDestroyed)'.format( settings.MCP_HOST, instance.pk )
 
-    self.cinp.create( box_url, data )
+    await self.cinp.create( box_url, data )
 
-  def getNetworkUsage( self, id ):
-    return self.cinp.call( '/api/v1/Utilities/AddressBlock:{0}:(usage)'.format( id ), {}, retry_count=10 )
+  async def getNetworkUsage( self, id ):
+    return await self.cinp.call( '/api/v1/Utilities/AddressBlock:{0}:(usage)'.format( id ), {}, retry_count=10 )
 
-  def getBluePrint( self, id ):
-    return self.cinp.get( '/api/v1/BluePrint/StructureBluePrint:{0}:'.format( id ), retry_count=10 )
+  async def getBluePrint( self, id ):
+    return await self.cinp.get( '/api/v1/BluePrint/StructureBluePrint:{0}:'.format( id ), retry_count=10 )
 
   # used by manageResources.py
-  def getSite( self, id ):
-    return self.cinp.get( '/api/v1/Site/Site:{0}:'.format( id ), retry_count=10 )
+  async def getSite( self, id ):
+    return await self.cinp.get( '/api/v1/Site/Site:{0}:'.format( id ), retry_count=10 )
 
-  def getNetwork( self, id ):
-    return self.cinp.get( '/api/v1/Utilities/Network:{0}:'.format( id ), retry_count=10 )
+  async def getNetwork( self, id ):
+    return await self.cinp.get( '/api/v1/Utilities/Network:{0}:'.format( id ), retry_count=10 )
 
-  def getAddressBlock( self, id ):
-    return self.cinp.get( '/api/v1/Utilities/AddressBlock:{0}:'.format( id ), retry_count=10 )
+  async def getAddressBlock( self, id ):
+    return await self.cinp.get( '/api/v1/Utilities/AddressBlock:{0}:'.format( id ), retry_count=10 )
 
-  def getComplex( self, id ):
-    return self.cinp.get( '/api/v1/Building/Complex:{0}:'.format( id ), retry_count=10 )
+  async def getComplex( self, id ):
+    return await self.cinp.get( '/api/v1/Building/Complex:{0}:'.format( id ), retry_count=10 )

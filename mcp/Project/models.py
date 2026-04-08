@@ -507,7 +507,7 @@ A Single Commit of a Project
     score_list = []
     complete = True
     success = True
-    for ( name, value ) in self.test_results.items():
+    for ( _, value ) in self.test_results.items():
       if value.get( 'score', None ) is not None:
         try:
           score_list.append( float( value[ 'score' ] ) )
@@ -535,7 +535,7 @@ A Single Commit of a Project
     complete = True
     success = True
     for target in self.build_results:
-      for( name, value ) in self.build_results[ target ].items():
+      for ( _, value ) in self.build_results[ target ].items():
         complete &= value.get( 'status', '' ) == 'done'
         success &= value.get( 'success', False )
 
@@ -553,7 +553,7 @@ A Single Commit of a Project
     if self.branch == self.project.release_branch:
       complete = True
       success = True
-      for ( name, value ) in self.doc_results.items():
+      for ( _, value ) in self.doc_results.items():
         complete &= value.get( 'status', '' ) == 'done'
         success &= value.get( 'success', False )
 
@@ -815,7 +815,7 @@ class PackageFile( models.Model ):  # TODO: move this to Project and tie to the 
   @cinp.check_auth()
   @staticmethod
   def checkAuth( user, verb, id_list, action=None ):
-    return cinp.basic_auth_check( user, verb, PackageFile )
+    return cinp.basic_auth_check( user, verb, action, PackageFile )
 
   class Meta:
     default_permissions = ()

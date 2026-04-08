@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+import os
+
+os.environ.setdefault( 'DJANGO_SETTINGS_MODULE', 'mcp.settings' )
+
+import django
+django.setup()
+
+import sys
+import argparse
+from datetime import datetime, timezone
+from prettytable import PrettyTable
+
+from mcp.Project.models import Project, Build, BuildResource, GitProject, GitHubProject, GitLabProject
+from mcp.Resource.models import DynamicResource
+
+
+parser = argparse.ArgumentParser( description='project manager - manage projects' )
+task = parser.add_mutually_exclusive_group( required=True )
+
+task.add_argument( '--list', help='List the Curent Projects', action='store_true' )
+task.add_argument( '--add', help='Add a Project, name is required', action='store_true' )
+task.add_argument( '--remove', help='Remove a Project', metavar='PROJECT NAME' )
+
+# this one is a hack and is temporary until the dynamic/bluprint/stuff mess is figured out
+task.add_argument( '--update-builtin', help='Add the blueprint to the Builtin project', metavar='BLUEPRINT NAME' )
+
+# arguments for various tasks
+parser.add_argument( '--name', help='Name of resource' )
+parser.add_argument( '--release-branch', help='Release branch (default: master)', metavar='RELEASE BRANCH', default='master' )
+parser.add_argument( '--type', help='Type of project', choices=['git', 'github', 'gitlab'] )
+parser.add_argument( '--repo', help='git repo url, required if type is git or github' )
+parser.add_argument( '--org', help='github org, required if type is github' )
+parser.add_argument( '--path', help='gitlab path, required if type is gitlab' )
+parser.add_argument( '--id', help='gitlab id, required if type is gitlab' )
+
+parser.add_argument( '--json', help='Output lists as JSON instead of a table', action='store_true' )
+
+
+def main():
+  args = parser.parse_args()
+
+  # list operations
+  if args.list:
+    table = PrettyTable()
+    table.field_names = [ 'Name', 'Build Count', 'Last Checked', 'Release Branch', 'Max Commit Count', 'Local Path' ]
+    for project in Project.objects.all().order_by( 'name' ):
+      table.add_row( [ project.name, project.build_counter, project.last_checked, project.release_branch, project.max_commit_count, project.local_path ] )
+
+    table.sortby = 'Name'
+
+    if args.json:
+      print( table.get_json_string() )
+    else:
+      print( table )
+
+      sys.exit( 0 )
+
+  # add operations
+  elif args.add:
+    if not args.name:
+      print( 'name is required to add a project' )
+      sys.exit( 1 )
+
+    try:
+      Project.objects.get( name=args.name )
+      print( 'Project with Name "{0}" Already Exists'.format( args.name ) )
+      sys.exit( 1 )
+    except Project.DoesNotExist:
+      pass
+
+    if args.type:
+      if args.type == 'git':
+        if not args.repo:
+          print( 'repo is required to add a git project' )
+          sys.exit( 1 )
+
+        project = GitProject( git_repo=args.repo )
+
+      elif args.type == 'github':
+        if not args.repo or not args.org:
+          print( 'repo and org are required to add a github project' )
+          sys.exit( 1 )
+
+        project = GitHubProject( github_org=args.org, github_repo=args.repo )
+
+      elif args.type == 'gitlab':
+        if not args.path or not args.id:
+          print( 'path and id are required to add a gitlab project' )
+          sys.exit( 1 )
+
+        project = GitLabProject( gitlab_path=args.path, gitlab_id=args.id )
+
+    project.name = args.name
+    project.release_branch = args.release_branch
+    project.full_clean()
+    project.save()
+
+    print( 'project "{0}" added'.format( args.name ) )
+
+    sys.exit( 0 )
+
+  # remove operations
+  elif args.remove:
+    try:
+      project = Project.objects.get( name=args.remove )
+    except Project.DoesNotExist:
+      print( 'Project "{0}" not found in MCP'.format( args.remove ) )
+      sys.exit( 1 )
+
+    project.delete()
+    print( 'Project "{0}" deleted.'.format( args.remove ) )
+    sys.exit( 0 )
+
+  # the temporary hack
+  if args.update_builtin:
+    try:
+      resource = DynamicResource.objects.get()
+    except DynamicResource.DoesNotExist:
+      print( 'no dynamic resources found' )
+      sys.exit( 1 )
+
+    try:
+      project = Project.objects.get( name='_builtin_' )
+    except Project.DoesNotExist:
+      project = Project( name='_builtin_' )
+      project.local_path = ''
+      project.last_checked = datetime.now( timezone.utc )
+      project.full_clean()
+      project.save()
+
+    build = Build( name=args.update_builtin, project=project )
+    build.manual = False
+    build.full_clean()
+    build.save()
+
+    br = BuildResource( name=args.update_builtin, build=build, resource=resource )
+    br.quantity = 1
+    br.blueprint = args.update_builtin
+    br.auto_run = False
+    br.auto_provision = True
+    br.full_clean()
+    br.save()
+
+    print( 'blueprint "{0}" added to builting project'.format( args.update_builtin ) )
+
+    sys.exit( 0 )
+
+  print( 'No Action specified' )
+  sys.exit( 1 )
+
+
+if __name__ == '__main__':
+  main()

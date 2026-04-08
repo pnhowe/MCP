@@ -12,7 +12,10 @@ class InternalGit():
     self.release_branch = release_branch
 
   def _execute( self, args, cwd=None, ignore_rc_1=True ):
-    logging.debug( 'git: running "{0}"'.format( args ) )
+    if cwd is None:
+      logging.debug( 'git: running "{0}" with dir "{1}"...'.format( args, self.dir ) )
+    else:
+      logging.debug( 'git: running "{0}" in "{1}"...'.format( args, cwd ) )
 
     try:
       if cwd is None:

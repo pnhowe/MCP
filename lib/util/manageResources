@@ -9,12 +9,37 @@ django.setup()
 import sys
 import argparse
 import cinp
-from datetime import datetime, timezone
+import asyncio
 from prettytable import PrettyTable
 
-from mcp.Project.models import Project, Build, BuildResource
 from mcp.Resource.models import Site, Network, DynamicResource, DynamicResourceSite, StaticResource
 from mcp.lib.t3kton import getContractor
+
+
+class _ContractorSingleton:
+  def __init__( self ):
+    self._context = None
+    self._contractor = None
+    self._loop = asyncio.new_event_loop()
+
+  def _get( self ):
+    if self._contractor is None:
+      self._context = getContractor()
+      self._contractor = self._loop.run_until_complete( self._context.__aenter__() )
+    return self._contractor
+
+  def getSite( self, name ):
+    return self._loop.run_until_complete( self._get().getSite( name ) )
+
+  def getNetwork( self, network_id ):
+    return self._loop.run_until_complete( self._get().getNetwork( network_id ) )
+
+  def getAddressBlock( self, address_block_id ):
+    return self._loop.run_until_complete( self._get().getAddressBlock( address_block_id ) )
+
+  def getComplex( self, complex_id ):
+    return self._loop.run_until_complete( self._get().getComplex( complex_id ) )
+
 
 parser = argparse.ArgumentParser( description='resource manager - add/remove sites, networks, resources' )
 task = parser.add_mutually_exclusive_group( required=True )
@@ -43,9 +68,6 @@ task.add_argument( '--static-resource-remove', help='Remove a Static Resource, t
 task.add_argument( '--static-resource-attach', help='Attach Site to a Static Resource, name and site are required', action='store_true'  )
 task.add_argument( '--static-resource-detach', help='Detach Site from a Static Resource, name and site are required', action='store_true'  )
 
-# this one is a hack and is temporary until the dynamic/bluprint/stuff mess is figured out
-task.add_argument( '--update-builtin', help='Add the blueprint to the Builtin project', metavar='BLUEPRINT NAME' )
-
 # arguments for various tasks
 parser.add_argument( '--name', help='Name of resource' )
 parser.add_argument( '--description', help='Description of resource' )
@@ -62,330 +84,301 @@ parser.add_argument( '--generic', help='Flag as a generic site', action='store_t
 parser.add_argument( '--json', help='Output lists as JSON instead of a table', action='store_true' )
 
 
-args = parser.parse_args()
+def main():
+  args = parser.parse_args()
 
-site = None
-if args.site:
-  try:
-    site = Site.objects.get( name=args.site )
-  except Site.DoesNotExist:
-    print( 'Site "{0}" not found in MCP'.format( args.site ) )
-    sys.exit( 1 )
+  contractor = _ContractorSingleton()
 
-# list operations
-if args.site_list or args.network_list or args.dynamic_resource_list or args.static_resource_list:
-  table = PrettyTable()
-  if args.site_list:
-    table.field_names = [ 'Name', 'Generic' ]
-    for site in Site.objects.all().order_by( 'pk' ):
-      table.add_row( [ site.name, site.generic ] )
-
-  elif args.network_list:
-    if site is None:
-        print( 'Site Required' )
-        sys.exit( 1 )
-
-    table.field_names = [ 'Name', 'Size', 'Monolithic', 'Contractor Address Block Id', 'Contractor Network Id', 'In Use' ]
-    for network in Network.objects.filter( site=site ):
-      table.add_row( [ network.name, network.size, network.monolithic, network.contractor_addressblock_id, network.contractor_network_id, network.buildjob_set.count() != 0 ] )
-
-  elif args.dynamic_resource_list:
-    table.field_names = [ 'Name', 'Description', 'BluePrint/Build Ahead Count', 'Site/Complex Map' ]
-    for resource in DynamicResource.objects.all():
-      site_complex_list = [ '{0}:{1}'.format( i.site.name, i.complex_id ) for i in resource.dynamicresourcesite_set.all() ]
-      build_ahead_list = [ '{0}:{1}'.format( k, v ) for k, v in resource.build_ahead_count_map.items() ]
-      table.add_row( [ resource.name, resource.description, ' '.join( build_ahead_list ), ' '.join( site_complex_list ) ] )
-
-  elif args.static_resource_list:
-    table.field_names = [ 'Name', 'Description', 'Sites', 'Interface Map' ]
-    for resource in StaticResource.objects.all():
-      site_list = [ i.name for i in resource.sites.all() ]
-      table.add_row( [ resource.name, resource.description, ' '.join( site_list ), resource.interface_map ] )
-
-  table.sortby = 'Name'
-
-  if args.json:
-    print( table.get_json_string() )
-  else:
-    print( table )
-
-    sys.exit( 0 )
-
-contractor = getContractor()
-
-# site operations
-if args.site_add:
-  if not args.name:
-    print( 'Name Required' )
-    sys.exit( 1 )
-
-  try:
-    Site.objects.get( name=args.name )
-    print( 'Site with Name "{0}" Already Exists'.format( args.name ) )
-    sys.exit( 1 )
-
-  except Site.DoesNotExist:
-    pass
-
-  try:
-    contractor_site = contractor.getSite( args.name )
-  except cinp.client.NotFound:
-    print( 'Site "{0}" not found on Contractor'.format( args.name ) )
-    sys.exit( 1 )
-
-  site = Site()
-  site.name = args.name
-  site.generic = args.generic
-  site.full_clean()
-  site.save()
-
-  print( 'Site "{0}" Created.'.format( site.name ) )
-  sys.exit( 0 )
-
-if args.site_remove:
-  try:
-    site = Site.objects.get( name=args.site_remove )
-  except Site.DoesNotExist:
-    print( 'Site "{0}" not found in MCP'.format( args.site_remove ) )
-    sys.exit( 1 )
-
-  site.delete()
-  print( 'Site "{0}" deleted.'.format( args.site_remove ) )
-  sys.exit( 0 )
-
-# network operations
-if args.network_add:
-  if not site or not args.network or not args.address_block:
-    print( 'Site, Network, and Address Block Required' )
-    sys.exit( 1 )
-
-  try:
-    contractor_network = contractor.getNetwork( args.network )
-  except cinp.client.NotFound:
-    print( 'Network "{0}" not found on Contractor'.format( args.network ) )
-    sys.exit( 1 )
-
-  if contractor_network[ 'site' ].split( ':' )[1] != site.name:
-    print( 'Network "{0}" does not belong to site "{1}"'.format( args.network, args.site ) )
-    sys.exit( 1 )
-
-  try:
-    contractor_addressblock = contractor.getAddressBlock( args.address_block )
-  except cinp.client.NotFound:
-    print( 'AddressBlock "{0}" not found on Contractor'.format( args.address_block ) )
-    sys.exit( 1 )
-
-  if '/api/v1/Utilities/AddressBlock:{0}:'.format( args.address_block ) not in contractor_network[ 'address_block_list' ]:
-    print( 'No Linkage between AddressBlock "{0}" and Network "{1}"'.format( args.address_block, args.network ) )
-    sys.exit( 1 )
-
-  name = '{0}-{1}'.format( contractor_network[ 'name' ], contractor_addressblock[ 'name' ] )
-
-  try:
-    Network.objects.get( name=name )
-    print( 'Network for Network "{0}"({1}) Address Block "{2}"({3}) Already Exists'.format( contractor_network[ 'name' ], args.network, contractor_addressblock[ 'name' ], args.address_block ) )
-    sys.exit( 1 )
-
-  except Network.DoesNotExist:
-    pass
-
-  network = Network()
-  network.site = site
-  network.name = name
-  network.contractor_network_id = args.network
-  network.contractor_addressblock_id = args.address_block
-  network.monolithic = args.monolithic
-  network.size = contractor_addressblock[ 'size' ]
-  network.full_clean()
-  network.save()
-
-  print( 'Network for Network "{0}"({1}) Address Block "{2}"({3}) Created.'.format( contractor_network[ 'name' ], args.network, contractor_addressblock[ 'name' ], args.address_block ) )
-  sys.exit( 0 )
-
-if args.network_remove:
-  try:
-    network = Network.objects.get( name=args.network_remove )
-  except Site.DoesNotExist:
-    print( 'Network "{0}" not found in MCP'.format( args.network_remove ) )
-    sys.exit( 1 )
-
-  network.delete()
-  print( 'Network "{0}" deleted.'.format( args.network_remove ) )
-  sys.exit( 0 )
-
-# dynamic resource options
-if args.dynamic_resource_add:
-  if not args.name or not args.description:
-    print( 'Name and Description Required' )
-    sys.exit( 1 )
-
-  try:
-    DynamicResource.objects.get( name=args.name )
-    print( 'Dynamic Resource with Name "{0}" Already Exists'.format( args.name ) )
-    sys.exit( 1 )
-
-  except DynamicResource.DoesNotExist:
-    pass
-
-  dynamic_resource = DynamicResource()
-  dynamic_resource.name = args.name
-  dynamic_resource.description = args.description
-  dynamic_resource.full_clean()
-  dynamic_resource.save()
-
-  print( 'Dynamic Resource "{0}" Created.'.format( args.name ) )
-  sys.exit( 0 )
-
-if args.dynamic_resource_remove:
-  try:
-    dynamic_resource = DynamicResource.objects.get( name=args.dynamic_resource_remove )
-  except DynamicResource.DoesNotExist:
-    print( 'Dynamic Resource "{0}" not found in MCP'.format( args.dynamic_resource_remove ) )
-    sys.exit( 1 )
-
-  dynamic_resource.delete()
-  print( 'Dynamic Resource "{0}" deleted.'.format( args.dynamic_resource_remove ) )
-  sys.exit( 0 )
-
-if args.dynamic_resource_attach:
-  if not site or not args.name or not args.complex:
-    print( 'Name, Site, and Complex Required' )
-    sys.exit( 1 )
-
-  try:
-    dynamic_resource = DynamicResource.objects.get( name=args.name )
-  except DynamicResource.DoesNotExist:
-    print( 'Dynamic Resource "{0}" not found in MCP'.format( args.name ) )
-    sys.exit( 1 )
-
-  try:
-    contractor_complex = contractor.getComplex( args.complex )
-  except cinp.client.NotFound:
-    print( 'Complex "{0}" not found on Contractor'.format( args.complex ) )
-    sys.exit( 1 )
-
-  drs = DynamicResourceSite()
-  drs.dynamicresource = dynamic_resource
-  drs.site = site
-  drs.complex_id = args.complex
-  drs.full_clean()
-  drs.save()
-
-  print( 'Site "{0}" attached to Dynamic Resource "{1}" with Complex "{2}"'.format( site.name, dynamic_resource.name, args.complex ) )
-  sys.exit( 0 )
-
-if args.dynamic_resource_detach:
-  if not site or not args.name:
-    print( 'Name and Site Required' )
-    sys.exit( 1 )
-
-  try:
-    dynamic_resource = DynamicResource.objects.get( name=args.name )
-  except DynamicResource.DoesNotExist:
-    print( 'Dynamic Resource "{0}" not found in MCP'.format( args.name ) )
-    sys.exit( 1 )
-
-  try:
-    dynamic_resource.dynamicresourcesite_set.get( site=site ).delete()
-  except DynamicResourceSite.DoesNotExist:
-    print( 'Site "{0}" for Dynamic Resource "{1}" does not exist'.format( site.name, args.name ) )
-    sys.exit( 1 )
-
-  print( 'Site "{0}" detached from Dynamic Resource "{1}" does not exist'.format( site.name, args.name ) )
-  sys.exit( 0 )
-
-if args.dynamic_resource_build_ahead:
-  if not args.name or not args.blueprint:
-    print( 'Name and BluePrint Required' )
-    sys.exit( 1 )
-
-  try:
-    dynamic_resource = DynamicResource.objects.get( name=args.name )
-  except DynamicResource.DoesNotExist:
-    print( 'Dynamic Resource "{0}" not found in MCP'.format( args.name ) )
-    sys.exit( 1 )
-
-  if args.build_ahead_count:
-    dynamic_resource.build_ahead_count_map[ args.blueprint ] = args.build_ahead_count
-  else:
+  site = None
+  if args.site:
     try:
-      del dynamic_resource.build_ahead_count_map[ args.blueprint ]
-    except KeyError:
+      site = Site.objects.get( name=args.site )
+    except Site.DoesNotExist:
+      print( 'Site "{0}" not found in MCP'.format( args.site ) )
+      sys.exit( 1 )
+
+  # list operations
+  if args.site_list or args.network_list or args.dynamic_resource_list or args.static_resource_list:
+    table = PrettyTable()
+    if args.site_list:
+      table.field_names = [ 'Name', 'Generic' ]
+      for site in Site.objects.all().order_by( 'pk' ):
+        table.add_row( [ site.name, site.generic ] )
+
+    elif args.network_list:
+      if site is None:
+          print( 'Site Required' )
+          sys.exit( 1 )
+
+      table.field_names = [ 'Name', 'Size', 'Monolithic', 'Contractor Address Block Id', 'Contractor Network Id', 'In Use' ]
+      for network in Network.objects.filter( site=site ):
+        table.add_row( [ network.name, network.size, network.monolithic, network.contractor_addressblock_id, network.contractor_network_id, network.buildjob_set.count() != 0 ] )
+
+    elif args.dynamic_resource_list:
+      table.field_names = [ 'Name', 'Description', 'BluePrint/Build Ahead Count', 'Site/Complex Map' ]
+      for resource in DynamicResource.objects.all():
+        site_complex_list = [ '{0}:{1}'.format( i.site.name, i.complex_id ) for i in resource.dynamicresourcesite_set.all() ]
+        build_ahead_list = [ '{0}:{1}'.format( k, v ) for k, v in resource.build_ahead_count_map.items() ]
+        table.add_row( [ resource.name, resource.description, ' '.join( build_ahead_list ), ' '.join( site_complex_list ) ] )
+
+    elif args.static_resource_list:
+      table.field_names = [ 'Name', 'Description', 'Sites', 'Interface Map' ]
+      for resource in StaticResource.objects.all():
+        site_list = [ i.name for i in resource.sites.all() ]
+        table.add_row( [ resource.name, resource.description, ' '.join( site_list ), resource.interface_map ] )
+
+    table.sortby = 'Name'
+
+    if args.json:
+      print( table.get_json_string() )
+    else:
+      print( table )
+
+      sys.exit( 0 )
+
+  # site operations
+  if args.site_add:
+    if not args.name:
+      print( 'Name Required' )
+      sys.exit( 1 )
+
+    try:
+      Site.objects.get( name=args.name )
+      print( 'Site with Name "{0}" Already Exists'.format( args.name ) )
+      sys.exit( 1 )
+
+    except Site.DoesNotExist:
       pass
 
-  dynamic_resource.full_clean()
-  dynamic_resource.save()
-  print( 'Set blueprint "{0}" to count "{1}" in Dynamic Resource "{2}"'.format( args.blueprint, args.build_ahead_count, args.name ) )
-  sys.exit( 0 )
+    try:
+      contractor.getSite( args.name )
+    except cinp.client.NotFound:
+      print( 'Site "{0}" not found on Contractor'.format( args.name ) )
+      sys.exit( 1 )
 
-# static resource options
-if args.static_resource_add:
-  if not args.name or not args.description or not args.group:
-    print( 'Name, Description and Group Required' )
-    sys.exit( 1 )
+    site = Site()
+    site.name = args.name
+    site.generic = args.generic
+    site.full_clean()
+    site.save()
 
-  try:
-    StaticResource.objects.get( name=args.name )
-    print( 'Static Resource with Name "{0}" Already Exists'.format( args.name ) )
-    sys.exit( 1 )
+    print( 'Site "{0}" Created.'.format( site.name ) )
+    sys.exit( 0 )
 
-  except StaticResource.DoesNotExist:
-    pass
+  if args.site_remove:
+    try:
+      site = Site.objects.get( name=args.site_remove )
+    except Site.DoesNotExist:
+      print( 'Site "{0}" not found in MCP'.format( args.site_remove ) )
+      sys.exit( 1 )
 
-  static_resource = StaticResource()
-  static_resource.name = args.name
-  static_resource.description = args.description
-  static_resource.group = args.group
-  static_resource.full_clean()
-  static_resource.save()
+    site.delete()
+    print( 'Site "{0}" deleted.'.format( args.site_remove ) )
+    sys.exit( 0 )
 
-  print( 'Static Resource "{0}" Created.'.format( args.name ) )
-  sys.exit( 0 )
+  # network operations
+  if args.network_add:
+    if not site or not args.network or not args.address_block:
+      print( 'Site, Network, and Address Block Required' )
+      sys.exit( 1 )
 
-if args.static_resource_remove:
-  try:
-    static_resource = StaticResource.objects.get( name=args.static_resource_remove )
-  except StaticResource.DoesNotExist:
-    print( 'Static Resource "{0}" not found in MCP'.format( args.static_resource_remove ) )
-    sys.exit( 1 )
+    try:
+      contractor_network = contractor.getNetwork( args.network )
+    except cinp.client.NotFound:
+      print( 'Network "{0}" not found on Contractor'.format( args.network ) )
+      sys.exit( 1 )
 
-  static_resource.delete()
-  print( 'Static Resource "{0}" deleted.'.format( args.static_resource_remove ) )
-  sys.exit( 0 )
+    if contractor_network[ 'site' ].split( ':' )[1] != site.name:
+      print( 'Network "{0}" does not belong to site "{1}"'.format( args.network, args.site ) )
+      sys.exit( 1 )
 
-# the temporary hack
-if args.update_builtin:
-  try:
-    resource = DynamicResource.objects.get()
-  except DynamicResource.DoesNotExist:
-    print( 'no dynamic resources found' )
-    sys.exit( 1 )
+    try:
+      contractor_addressblock = contractor.getAddressBlock( args.address_block )
+    except cinp.client.NotFound:
+      print( 'AddressBlock "{0}" not found on Contractor'.format( args.address_block ) )
+      sys.exit( 1 )
 
-  try:
-    project = Project.objects.get( name='_builtin_' )
-  except Project.DoesNotExist:
-    project = Project( name='_builtin_' )
-    project.local_path = ''
-    project.last_checked = datetime.now( timezone.utc )
-    project.full_clean()
-    project.save()
+    if '/api/v1/Utilities/AddressBlock:{0}:'.format( args.address_block ) not in contractor_network[ 'address_block_list' ]:
+      print( 'No Linkage between AddressBlock "{0}" and Network "{1}"'.format( args.address_block, args.network ) )
+      sys.exit( 1 )
 
-  build = Build( name=args.update_builtin, project=project )
-  build.manual = False
-  build.full_clean()
-  build.save()
+    name = '{0}-{1}'.format( contractor_network[ 'name' ], contractor_addressblock[ 'name' ] )
 
-  br = BuildResource( name=args.update_builtin, build=build, resource=resource )
-  br.quantity = 1
-  br.blueprint = args.update_builtin
-  br.auto_run = False
-  br.auto_provision = True
-  br.full_clean()
-  br.save()
+    try:
+      Network.objects.get( name=name )
+      print( 'Network for Network "{0}"({1}) Address Block "{2}"({3}) Already Exists'.format( contractor_network[ 'name' ], args.network, contractor_addressblock[ 'name' ], args.address_block ) )
+      sys.exit( 1 )
 
-  print( 'blueprint "{0}" added to builting project'.format( args.update_builtin ) )
+    except Network.DoesNotExist:
+      pass
 
-  sys.exit( 0 )
+    network = Network()
+    network.site = site
+    network.name = name
+    network.contractor_network_id = args.network
+    network.contractor_addressblock_id = args.address_block
+    network.monolithic = args.monolithic
+    network.size = contractor_addressblock[ 'size' ]
+    network.full_clean()
+    network.save()
 
-print( 'No Action specified' )
-sys.exit( 1 )
+    print( 'Network for Network "{0}"({1}) Address Block "{2}"({3}) Created.'.format( contractor_network[ 'name' ], args.network, contractor_addressblock[ 'name' ], args.address_block ) )
+    sys.exit( 0 )
+
+  if args.network_remove:
+    try:
+      network = Network.objects.get( name=args.network_remove )
+    except Site.DoesNotExist:
+      print( 'Network "{0}" not found in MCP'.format( args.network_remove ) )
+      sys.exit( 1 )
+
+    network.delete()
+    print( 'Network "{0}" deleted.'.format( args.network_remove ) )
+    sys.exit( 0 )
+
+  # dynamic resource options
+  if args.dynamic_resource_add:
+    if not args.name or not args.description:
+      print( 'Name and Description Required' )
+      sys.exit( 1 )
+
+    try:
+      DynamicResource.objects.get( name=args.name )
+      print( 'Dynamic Resource with Name "{0}" Already Exists'.format( args.name ) )
+      sys.exit( 1 )
+
+    except DynamicResource.DoesNotExist:
+      pass
+
+    dynamic_resource = DynamicResource()
+    dynamic_resource.name = args.name
+    dynamic_resource.description = args.description
+    dynamic_resource.full_clean()
+    dynamic_resource.save()
+
+    print( 'Dynamic Resource "{0}" Created.'.format( args.name ) )
+    sys.exit( 0 )
+
+  if args.dynamic_resource_remove:
+    try:
+      dynamic_resource = DynamicResource.objects.get( name=args.dynamic_resource_remove )
+    except DynamicResource.DoesNotExist:
+      print( 'Dynamic Resource "{0}" not found in MCP'.format( args.dynamic_resource_remove ) )
+      sys.exit( 1 )
+
+    dynamic_resource.delete()
+    print( 'Dynamic Resource "{0}" deleted.'.format( args.dynamic_resource_remove ) )
+    sys.exit( 0 )
+
+  if args.dynamic_resource_attach:
+    if not site or not args.name or not args.complex:
+      print( 'Name, Site, and Complex Required' )
+      sys.exit( 1 )
+
+    try:
+      dynamic_resource = DynamicResource.objects.get( name=args.name )
+    except DynamicResource.DoesNotExist:
+      print( 'Dynamic Resource "{0}" not found in MCP'.format( args.name ) )
+      sys.exit( 1 )
+
+    try:
+      contractor.getComplex( args.complex )
+    except cinp.client.NotFound:
+      print( 'Complex "{0}" not found on Contractor'.format( args.complex ) )
+      sys.exit( 1 )
+
+    drs = DynamicResourceSite()
+    drs.dynamicresource = dynamic_resource
+    drs.site = site
+    drs.complex_id = args.complex
+    drs.full_clean()
+    drs.save()
+
+    print( 'Site "{0}" attached to Dynamic Resource "{1}" with Complex "{2}"'.format( site.name, dynamic_resource.name, args.complex ) )
+    sys.exit( 0 )
+
+  if args.dynamic_resource_detach:
+    if not site or not args.name:
+      print( 'Name and Site Required' )
+      sys.exit( 1 )
+
+    try:
+      dynamic_resource = DynamicResource.objects.get( name=args.name )
+    except DynamicResource.DoesNotExist:
+      print( 'Dynamic Resource "{0}" not found in MCP'.format( args.name ) )
+      sys.exit( 1 )
+
+    try:
+      dynamic_resource.dynamicresourcesite_set.get( site=site ).delete()
+    except DynamicResourceSite.DoesNotExist:
+      print( 'Site "{0}" for Dynamic Resource "{1}" does not exist'.format( site.name, args.name ) )
+      sys.exit( 1 )
+
+    print( 'Site "{0}" detached from Dynamic Resource "{1}" does not exist'.format( site.name, args.name ) )
+    sys.exit( 0 )
+
+  if args.dynamic_resource_build_ahead:
+    if not args.name or not args.blueprint:
+      print( 'Name and BluePrint Required' )
+      sys.exit( 1 )
+
+    try:
+      dynamic_resource = DynamicResource.objects.get( name=args.name )
+    except DynamicResource.DoesNotExist:
+      print( 'Dynamic Resource "{0}" not found in MCP'.format( args.name ) )
+      sys.exit( 1 )
+
+    if args.build_ahead_count:
+      dynamic_resource.build_ahead_count_map[ args.blueprint ] = args.build_ahead_count
+    else:
+      try:
+        del dynamic_resource.build_ahead_count_map[ args.blueprint ]
+      except KeyError:
+        pass
+
+    dynamic_resource.full_clean()
+    dynamic_resource.save()
+    print( 'Set blueprint "{0}" to count "{1}" in Dynamic Resource "{2}"'.format( args.blueprint, args.build_ahead_count, args.name ) )
+    sys.exit( 0 )
+
+  # static resource options
+  if args.static_resource_add:
+    if not args.name or not args.description or not args.group:
+      print( 'Name, Description and Group Required' )
+      sys.exit( 1 )
+
+    try:
+      StaticResource.objects.get( name=args.name )
+      print( 'Static Resource with Name "{0}" Already Exists'.format( args.name ) )
+      sys.exit( 1 )
+
+    except StaticResource.DoesNotExist:
+      pass
+
+    static_resource = StaticResource()
+    static_resource.name = args.name
+    static_resource.description = args.description
+    static_resource.group = args.group
+    static_resource.full_clean()
+    static_resource.save()
+
+    print( 'Static Resource "{0}" Created.'.format( args.name ) )
+    sys.exit( 0 )
+
+  if args.static_resource_remove:
+    try:
+      static_resource = StaticResource.objects.get( name=args.static_resource_remove )
+    except StaticResource.DoesNotExist:
+      print( 'Static Resource "{0}" not found in MCP'.format( args.static_resource_remove ) )
+      sys.exit( 1 )
+
+    static_resource.delete()
+    print( 'Static Resource "{0}" deleted.'.format( args.static_resource_remove ) )
+    sys.exit( 0 )
+
+  print( 'No Action specified' )
+  sys.exit( 1 )
+
+
+if __name__ == '__main__':
+  main()

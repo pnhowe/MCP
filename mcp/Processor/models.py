@@ -62,7 +62,7 @@ class Promotion( models.Model ):
   @cinp.check_auth()
   @staticmethod
   def checkAuth( user, verb, id_list, action=None ):
-    return cinp.basic_auth_check( user, verb, Promotion )
+    return cinp.basic_auth_check( user, verb, action, Promotion )
 
   class Meta:
     default_permissions = ()
@@ -76,12 +76,12 @@ class PromotionBuild( models.Model ):
   promotion = models.ForeignKey( Promotion, on_delete=models.CASCADE )
   build = models.ForeignKey( Build, on_delete=models.CASCADE )
   status = models.CharField( max_length=50 )
-  success = models.NullBooleanField( null=True )
+  success = models.BooleanField( null=True, blank=True )
 
   @cinp.check_auth()
   @staticmethod
   def checkAuth( user, verb, id_list, action=None ):
-    return cinp.basic_auth_check( user, verb, PromotionBuild )
+    return cinp.basic_auth_check( user, verb, action, PromotionBuild )
 
   class Meta:
     unique_together = ( 'promotion', 'build' )
@@ -233,17 +233,7 @@ QueueItem
   @cinp.check_auth()
   @staticmethod
   def checkAuth( user, verb, id_list, action=None ):
-    if not cinp.basic_auth_check( user, verb, QueueItem ):
-      return False
-
-    if verb == 'CALL':
-      if action == 'queue' and user.has_perm( 'Processor.can_build' ):
-        return True
-
-      return False
-
-    else:
-      return True
+    return cinp.basic_auth_check( user, verb, action, QueueItem, { 'queue': 'Processor.can_build' } )
 
   class Meta:
     default_permissions = ()
@@ -461,23 +451,7 @@ BuildJob
   @cinp.check_auth()
   @staticmethod
   def checkAuth( user, verb, id_list, action=None ):
-    if not cinp.basic_auth_check( user, verb, BuildJob ):
-      return False
-
-    if verb == 'CALL':
-      if action in ( 'getInstanceState', 'getInstanceStructureId' ):
-        return True
-
-      if action == 'jobRan' and user.has_perm( 'Processor.can_ran' ):
-        return True
-
-      if action == 'acknowledge' and user.has_perm( 'Processor.can_ack' ):
-        return True
-
-      return False
-
-    else:
-      return True
+    return cinp.basic_auth_check( user, verb, action, BuildJob, { 'getInstanceState': None, 'getInstanceStructureId': None, 'jobRan': 'Processor.can_ran', 'acknowledge': 'Processor.can_ack' } )
 
   def clean( self, *args, **kwargs ):
     super().clean( *args, **kwargs )
@@ -803,7 +777,7 @@ class BuildJobResourceInstance( models.Model ):
   @cinp.check_auth()
   @staticmethod
   def checkAuth( user, verb, id_list, action=None ):
-    return cinp.basic_auth_check( user, verb, BuildJobResourceInstance )
+    return cinp.basic_auth_check( user, verb, action, BuildJobResourceInstance )
 
   class Meta:
     default_permissions = ()

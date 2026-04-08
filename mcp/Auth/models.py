@@ -9,7 +9,10 @@ from cinp.server_common import InvalidRequest
 session_engine = import_module( settings.SESSION_ENGINE )
 
 
-def getUser( auth_id, auth_token ):
+def getUser( cookie_map, header_map ):
+  auth_id = header_map.get( 'AUTH-ID', None )
+  auth_token = header_map.get( 'AUTH-TOKEN', None )
+
   if auth_id is None or auth_token is None:
     return AnonymousUser()
 
@@ -51,9 +54,7 @@ class User():
   @staticmethod
   def login( username, password ):
     user = auth.authenticate( username=username, password=password )
-    if user is not None:
-      pass
-    else:
+    if user is None:
       raise InvalidRequest( 'Invalid Login' )
 
     request = Request( session=session_engine.SessionStore( None ), user=user )
@@ -76,7 +77,7 @@ class User():
 
   @cinp.action( paramater_type_list=[ '_USER_', 'String' ] )
   @staticmethod
-  def change_password( user, password ):
+  def changePassword( user, password ):
     user.set_password( password )
     user.save()
 

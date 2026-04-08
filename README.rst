@@ -29,35 +29,17 @@ then::
   /usr/lib/mcp/util/manage.py migrate
   /usr/lib/mcp/setup/setupWizard
 
-you will want to setup the starting resources, first add a site, the site name (test1), should match the site id in
-contractor you want to use::
-
-  /usr/lib/mcp/util/manageResources --site-add test1
-
-next add the network, the format is <network id>:<addressblock id>, thoes are the ids of the network and address block
-in contractor you want to use::
-
-  /usr/lib/mcp/util/manageResources --site=sjc4c08v1 --network-add=1:1
-
-now the contractor complex to host the dynamic resources, the id (test1esx) should be the complex id on contractor.  This should be
-a ESX/VCenter, Proxmox or Virtualbox complex.
-
-  /usr/lib/mcp/util/manageResources --site=test1 --dynamic-resource-add=test1esx --dynamic-resource-add-name=vm
-
-and finally, update the built in project (this project is used for the automatic builds triggered by test/lint, package, etc
-builds) with the blueprint id from contractor::
-
-  /usr/lib/mcp/util/manageResources --site=test1 --update-builtin=ubuntu-bionic-base
-
-Now we need to create the MCP user, on the contractor host::
+Now we need to create the MCP user on the contractor host::
 
   /usr/lib/contractor/util/manage.py shell
   from django.contrib.auth.models import User, Permission
   user = User.objects.create_user('mcp', 'mcp@mcp.test', 'mcp')
+  user.user_permissions.add( Permission.objects.get( codename='view_site', content_type__app_label='Site' ) )
+  user.user_permissions.add( Permission.objects.get( codename='view_network', content_type__app_label='Utilities' ) )
+  user.user_permissions.add( Permission.objects.get( codename='view_addressblock', content_type__app_label='Utilities' ) )
   user.user_permissions.add( Permission.objects.get( codename='can_create_foundation', content_type__app_label='Building' ) )
   user.user_permissions.add( Permission.objects.get( codename='add_structure', content_type__app_label='Building' ) )
   user.user_permissions.add( Permission.objects.get( codename='delete_structure', content_type__app_label='Building' ) )
-  user.user_permissions.add( Permission.objects.get( codename='delete_foundation', content_type__app_label='Building' ) )
   user.user_permissions.add( Permission.objects.get( codename='add_realnetworkinterface', content_type__app_label='Utilities' ) )
   user.user_permissions.add( Permission.objects.get( codename='add_address', content_type__app_label='Utilities' ) )
   user.user_permissions.add( Permission.objects.get( codename='can_create_foundation_job', content_type__app_label='Building' ) )
@@ -67,3 +49,35 @@ Now we need to create the MCP user, on the contractor host::
   user.user_permissions.add( Permission.objects.get( codename='add_structurebox', content_type__app_label='PostOffice' ) )
   user.user_permissions.add( Permission.objects.get( codename='add_foundationbox', content_type__app_label='PostOffice' ) )
   user = User.objects.create_user('nullunit', 'nullunit@mcp.test', 'nullunit')
+
+# also need the delete foundation
+
+For the packrat host, the MCP user should have been created by they setupWizard.
+
+you will want to setup the starting resources, first add a site, the site name (test1), should match the site id in
+contractor you want to use::
+
+  /usr/lib/mcp/util/manageResources --site-add --name test1
+
+next add the network
+in contractor you want to use::
+
+  /usr/lib/mcp/util/manageResources --network-add --site test1 --network 1 --address-block 1
+
+now the contractor complex to host the dynamic resources, the id (proxmox) should be the complex id on contractor.  This should be
+a ESX/VCenter, Proxmox, or Virtualbox complex.
+
+  /usr/lib/mcp/util/manageResources --dynamic-resource-add --site test1 --name proxmox --description "Proxmox VM"
+
+and finally, update the built in project (this project is used for the automatic builds triggered by test/lint, package, etc
+builds) with the blueprint id from contractor::
+
+  /usr/lib/mcp/util/manageProjects --update-builtin ubuntu-noble-base --site test
+
+To speed things up a bit, you can tell MCP to pre-build some dynamic resources::
+
+  ./manageResources --dynamic-resource-build-ahead --name vbox --blueprint ubuntu-noble-base --build-ahead-count 1
+
+Now to add a Project to track::
+
+  /usr/lib/mcp/util/manageProjects --add --type git --name myproject

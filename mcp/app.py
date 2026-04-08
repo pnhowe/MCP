@@ -48,7 +48,11 @@ def confluenceInfo():
 
 
 def get_app( debug ):
-  app = WerkzeugServer( root_path='/api/v1/', root_version='0.11', debug=debug, get_user=getUser, cors_allow_list=[ '*' ], debug_dump_location=settings.DEBUG_DUMP_LOCATION )
+  extras = {}
+  if settings.UI_HOSTNAME is not None:
+    extras[ 'cors_allow_origin' ] = settings.UI_HOSTNAME
+
+  app = WerkzeugServer( root_path='/api/v1/', root_version='0.11', debug=debug, get_user=getUser, auth_header_list=[ 'AUTH-ID', 'AUTH-TOKEN' ], auth_cookie_list=[ 'SESSION' ], debug_dump_location=settings.DEBUG_DUMP_LOCATION, **extras )
 
   config = Model( name='config', field_list=[], transaction_class=BlankTransaction )
   config.checkAuth = lambda user, verb, id_list: True

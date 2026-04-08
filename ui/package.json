@@ -1,0 +1,42 @@
+{
+  "name": "mcp-ui",
+  "version": "0.1.0",
+  "description": "MCP UI",
+  "main": "index.js",
+  "dependencies": {
+    "@emotion/react": "^11.11.0",
+    "@emotion/styled": "^11.11.0",
+    "@mui/icons-material": "^5.14.0",
+    "@mui/material": "^5.14.0",
+    "@reduxjs/toolkit": "^2.11.2",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "cinp": "^1.1.7",
+    "react-redux": "^9.2.0",
+    "react-router-dom": "^5.3.4"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.22.0",
+    "@babel/plugin-transform-runtime": "^7.22.0",
+    "@babel/preset-env": "^7.22.0",
+    "@babel/preset-react": "^7.22.0",
+    "@babel/preset-typescript": "^7.22.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@types/react-router-dom": "^5.3.3",
+    "babel-loader": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "css-loader": "^6.8.0",
+    "style-loader": "^3.3.0",
+    "typescript": "^5.0.0",
+    "webpack": "^5.88.0",
+    "webpack-cli": "^5.1.0",
+    "webpack-dev-server": "^5.2.3"
+  },
+  "scripts": {
+    "start": "cross-env NODE_ENV=development webpack serve --config webpack.config.js",
+    "build": "cross-env NODE_ENV=production webpack --config webpack.config.js"
+  },
+  "author": "Peter Howe pnhowe@gmail.com",
+  "license": "Apache-2.0"
+}

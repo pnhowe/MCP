@@ -24,7 +24,7 @@ from mcp.lib.Slack import getSlack
 from mcp.lib.Packrat import getPackrat
 from mcp.lib.SCM import SCMException
 
-PID_FILE = '/var/run/recoginzer.pid'
+PID_FILE = '/var/run/mcp/recoginzer.pid'
 
 QUEUE_PRIORITY = 100
 
