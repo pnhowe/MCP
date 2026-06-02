@@ -1,7 +1,7 @@
 from django.conf import settings
 
 from cinp.server_werkzeug import WerkzeugServer
-from cinp.server_common import Model, Action, Paramater
+from cinp.server_common import Model, Action, Parameter
 
 from mcp.Auth.models import getUser
 
@@ -58,13 +58,13 @@ def get_app( debug ):
   config.checkAuth = lambda user, verb, id_list: True
   app.root_namespace.addElement( config )
 
-  info = Action( name='getContractorInfo', return_paramater=Paramater( type='Map' ), func=contractorInfo )
+  info = Action( name='getContractorInfo', return_parameter=Parameter( type='Map' ), func=contractorInfo )
   info.checkAuth = lambda user, verb, id_list: True
   config.addAction( info )
-  info = Action( name='getPackratInfo', return_paramater=Paramater( type='Map' ), func=packratInfo )
+  info = Action( name='getPackratInfo', return_parameter=Parameter( type='Map' ), func=packratInfo )
   info.checkAuth = lambda user, verb, id_list: True
   config.addAction( info )
-  info = Action( name='getConfluenceInfo', return_paramater=Paramater( type='Map' ), func=confluenceInfo )
+  info = Action( name='getConfluenceInfo', return_parameter=Parameter( type='Map' ), func=confluenceInfo )
   info.checkAuth = lambda user, verb, id_list: True
   config.addAction( info )
 

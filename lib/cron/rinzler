@@ -43,27 +43,6 @@ blueprint_cache_map = {}
 
 # when loading build targets, make sure the target name isn't reserved: 'lint', 'test', 'rpm', 'dpkg', 'respkg', 'resource', 'doc', 'all', 'clean', '*-targets', '*-requires', '*-depends', '*-file', '*-builds', 'target'
 
-logging.basicConfig()
-logger = logging.getLogger()
-handler = SysLogHandler( address='/dev/log', facility=SysLogHandler.LOG_DAEMON )
-handler.setFormatter( logging.Formatter( fmt='rinzler[%(process)d]: %(message)s' ) )
-logger.addHandler( handler )
-logging.info( 'Starting...' )
-if '-v' in sys.argv:
-  logger.setLevel( logging.DEBUG )
-elif '-c' in sys.argv:
-  logger.setLevel( logging.ERROR )
-else:
-  logger.setLevel( logging.INFO )
-
-if os.path.exists( PID_FILE ):
-  logging.error( 'pid file exists, bailing...' )
-  sys.exit( 0 )
-
-tmp = open( PID_FILE, 'w' )
-tmp.write( '{0}\n'.format( os.getpid() ) )
-tmp.close()
-
 
 async def _checkBluePrint( blueprint, contractor ):
   global blueprint_cache_map
@@ -338,18 +317,13 @@ def _failCommit( commit, slack, msg=None, exception=None ):
 
 
 async def main():
-  global blueprint_cache_map
-
   slack = getSlack( 'rinzler' )
 
   try:
-    async with getContractor() as contractor, getPackrat() as packrat:
+    async with getContractor() as contractor, getPackrat() as packrat:  # TODO: need to wrap getContractor and getPackrat so we only create them when they are needed, saving a connection and login/logout
       await _run( slack, contractor, packrat )
   except Exception as e:
     logging.exception( 'Exception "{0}" trying to connect to contractor and or slack, try again later'.format( e ) )
-    os.unlink( PID_FILE )
-    logging.shutdown()
-    sys.exit( 0 )
 
 
 async def _run( slack, contractor, packrat ):
@@ -580,8 +554,31 @@ async def _run( slack, contractor, packrat ):
     project.full_clean()
     project.save()
 
+logging.basicConfig()
+logger = logging.getLogger()
+handler = SysLogHandler( address='/dev/log', facility=SysLogHandler.LOG_DAEMON )
+handler.setFormatter( logging.Formatter( fmt='rinzler[%(process)d]: %(message)s' ) )
+logger.addHandler( handler )
+logging.info( 'Starting...' )
+if '-v' in sys.argv:
+  logger.setLevel( logging.DEBUG )
+elif '-c' in sys.argv:
+  logger.setLevel( logging.ERROR )
+else:
+  logger.setLevel( logging.INFO )
 
+if os.path.exists( PID_FILE ):
+  logging.error( 'pid file exists, bailing...' )
+  sys.exit( 0 )
+
+tmp = open( PID_FILE, 'w' )
+tmp.write( '{0}\n'.format( os.getpid() ) )
+tmp.close()
+
+# Django's ORM isn't async safe, but we are single threaded here and only doing one ORM call at a time, so it should be ok. or So Claude asures me.
+os.environ[ 'DJANGO_ALLOW_ASYNC_UNSAFE' ] = 'true'
 asyncio.run( main() )
 logging.info( 'Done!' )
 logging.shutdown()
+os.unlink( PID_FILE )
 sys.exit( 0 )

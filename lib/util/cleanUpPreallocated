@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import os
+import sys
+import asyncio
 
 os.environ.setdefault( 'DJANGO_SETTINGS_MODULE', 'mcp.settings' )
 
@@ -8,22 +10,32 @@ django.setup()
 
 import time
 from mcp.Processor.models import BuildJobResourceInstance
+from mcp.lib.t3kton import getContractor
 
 
-for instance in BuildJobResourceInstance.objects.filter( buildjob__isnull=True, state='built' ):
-  print( 'Telling contractor to release "{0}"'.format( instance ) )
-  instance.release()
+async def main():
+  try:
+    async with getContractor() as contractor:
+      for instance in BuildJobResourceInstance.objects.filter( buildjob__isnull=True, state='built' ):
+        print( 'Telling contractor to release "{0}"'.format( instance ) )
+        await instance.release( contractor )
 
+      while True:
+        print( '{0} Instances remaning'.format( BuildJobResourceInstance.objects.filter( buildjob__isnull=True ).count() ) )
+        for instance in BuildJobResourceInstance.objects.filter( buildjob__isnull=True, state='released' ):
+          print( 'Deleting Instance "{0}"'.format( instance ) )
+          instance.delete()
 
-while True:
-  print( '{0} Instances remaning'.format( BuildJobResourceInstance.objects.filter( buildjob__isnull=True ).count() ) )
-  for instance in BuildJobResourceInstance.objects.filter( buildjob__isnull=True, state='released' ):
-    print( 'Deleting Instance "{0}"'.format( instance ) )
-    instance.delete()
+        if BuildJobResourceInstance.objects.filter( buildjob__isnull=True, state='releasing' ).count() == 0:
+          break
 
-  if BuildJobResourceInstance.objects.filter( buildjob__isnull=True, state='releasing' ).count() == 0:
-    break
+        time.sleep( 30 )
 
-  time.sleep( 30 )
+  except Exception as e:
+    print( 'Exception "{0}" connecint to contractor or doing the cleanup'.format( e ) )
+    sys.exit( 1 )
 
+# Django's ORM isn't async safe, but we are single threaded here and only doing one ORM call at a time, so it should be ok. or So Claude asures me.
+os.environ[ 'DJANGO_ALLOW_ASYNC_UNSAFE' ] = 'true'
+asyncio.run( main() )
 print( 'Done!' )

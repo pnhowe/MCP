@@ -1,37 +1,27 @@
 import React from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material';
+import type { RootState, AppDispatch } from '../store';
+import { clearServerError } from '../store/appSlice';
 
-interface ServerErrorState {
-  open: boolean;
-  title: string;
-  trace: string;
-}
-
-class ServerError extends React.Component<{}, ServerErrorState>
+const ServerError: React.FC = () =>
 {
-  state: ServerErrorState = { open: false, title: '', trace: '' };
+  const dispatch = useDispatch<AppDispatch>();
+  const serverError = useSelector( ( s: RootState ) => s.app.serverError );
 
-  show( title: string, trace: string )
-  {
-    this.setState( { open: true, title, trace } );
-  }
-
-  render()
-  {
-    return (
-      <Dialog open={ this.state.open } onClose={ () => this.setState( { open: false } ) } maxWidth="md" fullWidth>
-        <DialogTitle>{ this.state.title }</DialogTitle>
-        <DialogContent>
-          <Typography component="pre" sx={{ fontSize: '0.8rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
-            { this.state.trace }
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={ () => this.setState( { open: false } ) }>Close</Button>
-        </DialogActions>
-      </Dialog>
-    );
-  }
-}
+  return (
+    <Dialog open={ serverError !== null } onClose={ () => dispatch( clearServerError() ) } maxWidth="md" fullWidth>
+      <DialogTitle>{ serverError?.msg }</DialogTitle>
+      <DialogContent>
+        <Typography component="pre" sx={{ fontSize: '0.8rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+          { serverError?.trace }
+        </Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={ () => dispatch( clearServerError() ) }>Close</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
 
 export default ServerError;

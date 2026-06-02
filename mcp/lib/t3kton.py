@@ -12,7 +12,7 @@ def getContractor():
 
 
 class Contractor():
-  def relogin( func ):
+  def relogin( func ):  # TODO: Contractor should tell us when our token will expire, and we should re-login before that, instead of waiting for an error to happen
     async def wrapper( self, *args, **kwargs ):
       try:
         return await func( self, *args, **kwargs )
@@ -67,7 +67,7 @@ class Contractor():
     structure = None
     try:
       interface_map_list = [ { 'name': name, 'network_id': interface[ 'network_id' ] } for name, interface in interface_map.items() ]
-      foundation = self.cinp.call( '{0}(createFoundation)'.format( complex_uri ), { 'hostname': hostname, 'interface_map_list': interface_map_list, 'site': '/api/v1/Site/Site:{0}:'.format( site_id ) } )
+      foundation = await self.cinp.call( '{0}(createFoundation)'.format( complex_uri ), { 'hostname': hostname, 'interface_map_list': interface_map_list, 'site': '/api/v1/Site/Site:{0}:'.format( site_id ) } )
 
       data = {}
       data[ 'site' ] = '/api/v1/Site/Site:{0}:'.format( site_id )
@@ -75,7 +75,7 @@ class Contractor():
       data[ 'hostname' ] = hostname
       data[ 'blueprint' ] = '/api/v1/BluePrint/StructureBluePrint:{0}:'.format( blueprint_id )
       data[ 'config_values' ] = config_values
-      structure = self.cinp.create( '/api/v1/Building/Structure', data )[0]
+      structure = ( await self.cinp.create( '/api/v1/Building/Structure', data ) )[0]
 
       for name, interface in interface_map.items():
         data = {}
@@ -88,16 +88,16 @@ class Contractor():
         if offset is not None:
           data[ 'offset' ] = offset
           data[ 'address_block' ] = '/api/v1/Utilities/AddressBlock:{0}:'.format( interface[ 'address_block_id' ] )
-          self.cinp.create( '/api/v1/Utilities/Address', data )
+          await self.cinp.create( '/api/v1/Utilities/Address', data )
         else:
-          self.cinp.call( '/api/v1/Utilities/AddressBlock:{0}:(nextAddress)'.format( interface[ 'address_block_id' ] ), data )
+          await self.cinp.call( '/api/v1/Utilities/AddressBlock:{0}:(nextAddress)'.format( interface[ 'address_block_id' ] ), data )
 
     except Exception as e:
       if structure is not None:
-        self.cinp.delete( structure, retry_count=10 )
+        await self.cinp.delete( structure, retry_count=10 )
 
       if foundation is not None:
-        self.cinp.delete( foundation, retry_count=10 )
+        await self.cinp.delete( foundation, retry_count=10 )
 
       raise e
 
@@ -222,6 +222,7 @@ class Contractor():
     else:
       data[ 'url' ] = '{0}/api/v1/Processor/BuildJobResourceInstance:{1}:(signalDestroyed)'.format( settings.MCP_HOST, instance.pk )
 
+    print( '----', box_url, data )
     await self.cinp.create( box_url, data )
 
   async def getNetworkUsage( self, id ):

@@ -21,7 +21,7 @@ export const fetchCommit = createAuthThunk( 'commits/fetchOne', async ( id: stri
   return mcp.Project_Commit_get( parseInt( id ) );
 } );
 
-const commitsSlice = createDetailListSlice( {
+const commitsSlice = createDetailListSlice<Project_Commit, Project_Commit>( {
   name: 'commits',
   fetchList: fetchCommitList,
   fetchOne: fetchCommit,

@@ -12,7 +12,7 @@ export const fetchProject = createAuthThunk( 'projects/fetchOne', async ( name: 
   return mcp.Project_Project_get( name );
 } );
 
-const projectsSlice = createDetailListSlice( {
+const projectsSlice = createDetailListSlice<Project_Project, Project_Project>( {
   name: 'projects',
   fetchList: fetchProjectList,
   fetchOne: fetchProject,

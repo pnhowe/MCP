@@ -5,7 +5,6 @@ from django.apps import apps
 
 from cinp.orm_django import DjangoCInP as CInP
 
-from mcp.lib.t3kton import getContractor
 from mcp.fields import MapField, name_regex
 
 # NOTE: these are not "thread safe", there is no per-instance resource reservation
@@ -15,9 +14,9 @@ from mcp.fields import MapField, name_regex
 cinp = CInP( 'Resource', '0.1' )
 
 
-def _getAvailibleNetwork( site, quantity ):
+async def _getAvailibleNetwork( contractor, site, quantity ):
   for network in site.network_set.filter( monolithic=False ):
-    if network.available( quantity ):
+    if await network.available( contractor, quantity ):
       return network
 
   return None
@@ -60,10 +59,10 @@ class Resource( models.Model ):
   updated = models.DateTimeField( editable=False, auto_now=True )
   # allowed blueprint list?, verify in allocate and available
 
-  def available( self, site, quantity, interface_map ):
+  async def available( self, contractor, site, quantity, interface_map ):
     return False
 
-  def allocate( self, site, buildjob, buildresource, interface_map ):
+  async def allocate( self, contractor, site, buildjob, buildresource, interface_map ):
     raise Exception( 'can not allocate a Base level Resource' )
 
   @property
@@ -121,21 +120,20 @@ class ResourceInstance( models.Model ):
   def resource( self ):
     return self.subclass.resource()
 
-  def allocate( self, blueprint, config_values, hostname ):
-    self.subclass.allocate( blueprint, config_values, hostname )
+  async def allocate( self, contractor, blueprint, config_values, hostname ):
+    await self.subclass.allocate( contractor, blueprint, config_values, hostname )
 
-  def updateConfig( self, config_values, hostname ):
-    contractor = getContractor()
-    contractor.updateConfig( self.contractor_structure_id, config_values, hostname )
+  async def updateConfig( self, contractor, config_values, hostname ):
+    await contractor.updateConfig( self.contractor_structure_id, config_values, hostname )
 
-  def build( self ):
-    self.subclass.build()
+  async def build( self, contractor ):
+    await self.subclass.build( contractor )
 
-  def release( self ):
-    self.subclass.release()
+  async def release( self, contractor ):
+    await self.subclass.release( contractor )
 
-  def cleanup( self ):
-    self.subclass.cleanup()
+  async def cleanup( self, contractor ):
+    await self.subclass.cleanup( contractor )
 
   @cinp.check_auth()
   @staticmethod
@@ -155,7 +153,7 @@ StaticResource
   group_name = models.CharField( max_length=50 )
   interface_map = MapField( blank=True )
 
-  def available( self, site, quantity, interface_map ):
+  async def available( self, contractor, site, quantity, interface_map ):
     if site != self.site:
       return False
 
@@ -171,7 +169,7 @@ StaticResource
 
     return True
 
-  def allocate( self, site, buildjob, buildresource, interface_map ):  # TODO: do this!
+  async def allocate( self, contractor, site, buildjob, buildresource, interface_map ):  # TODO: do this!
     if site not in self.sites:
       raise ValueError( 'site "{0}" not in list of sites for this resource'.format( site ) )
     # initial stab at it
@@ -192,7 +190,7 @@ StaticResource
     buildjob_resource.full_clean()
     buildjob_resource.save()
 
-    buildjob_resource.allocate()
+    await buildjob_resource.allocate( contractor )
 
   # TODO: cleanup too?
 
@@ -216,25 +214,22 @@ StaticResourceInstance
   def resource( self ):
     return self.static_resource
 
-  def allocate( self, blueprint, config_values, hostname ):
-    contractor = getContractor()
-    contractor.allocateStaticResource( self.contractor_structure_id, blueprint, config_values, hostname )
-    contractor.registerWebHook( self.buildjobresourceinstance, True, structure_id=self.contractor_structure_id )
+  async def allocate( self, contractor, blueprint, config_values, hostname ):
+    await contractor.allocateStaticResource( self.contractor_structure_id, blueprint, config_values, hostname )
+    await contractor.registerWebHook( self.buildjobresourceinstance, True, structure_id=self.contractor_structure_id )
 
-  def build( self ):
-    contractor = getContractor()
+  async def build( self, contractor ):
     if not self.buildjobresourceinstance.auto_provision:
       return
 
-    contractor.builStaticResource( self.contractor_structure_id )
-    contractor.registerWebHook( self.buildjobresourceinstance, True, structure_id=self.contractor_structure_id )
+    await contractor.builStaticResource( self.contractor_structure_id )
+    await contractor.registerWebHook( self.buildjobresourceinstance, True, structure_id=self.contractor_structure_id )
 
-  def release( self ):
-    contractor = getContractor()
-    contractor.releaseStatic( self.contractor_structure_id )
-    contractor.registerWebHook( self.buildjobresourceinstance, False, structure_id=self.contractor_structure_id )
+  async def release( self, contractor ):
+    await contractor.releaseStatic( self.contractor_structure_id )
+    await contractor.registerWebHook( self.buildjobresourceinstance, False, structure_id=self.contractor_structure_id )
 
-  def cleanup( self ):
+  async def cleanup( self, contractor ):
     pass
 
   @cinp.check_auth()
@@ -254,7 +249,7 @@ DynamicResource
   build_ahead_count_map = MapField( blank=True, null=True )  # mabey we should have a blueprint model for this and for the allowed blueprints
   sites = models.ManyToManyField( Site, through='DynamicResourceSite' )
 
-  def _takeOver( self, dynamic_resource_instance, buildjob, buildresource, index ):
+  async def _takeOver( self, contractor, dynamic_resource_instance, buildjob, buildresource, index ):
     buildjob_resource = dynamic_resource_instance.buildjobresourceinstance
     buildjob_resource.buildjob = buildjob
     buildjob_resource.name = buildresource.name
@@ -265,12 +260,12 @@ DynamicResource
     buildjob_resource.full_clean()
     buildjob_resource.save()
 
-    buildjob_resource.updateConfig()
+    await buildjob_resource.updateConfig( contractor )
 
     if buildjob_resource.state == 'built':  # there may be some triggers(auto_run) that would of happened if this was built normally, do that now
       buildjob_resource.signalBuilt( buildjob_resource.cookie )
 
-  def _createNew( self, site, interface_map, buildjob, buildresource, index ):
+  async def _createNew( self, contractor, site, interface_map, buildjob, buildresource, index ):
     BuildJobResourceInstance = apps.get_model( 'Processor', 'BuildJobResourceInstance' )
 
     resource_instance = DynamicResourceInstance()
@@ -292,9 +287,9 @@ DynamicResource
     buildjob_resource.full_clean()
     buildjob_resource.save()
 
-    buildjob_resource.allocate()
+    await buildjob_resource.allocate( contractor )
 
-  def _replenish( self, site, interface_map, blueprint ):
+  async def _replenish( self, contractor, site, interface_map, blueprint ):
     BuildJobResourceInstance = apps.get_model( 'Processor', 'BuildJobResourceInstance' )
 
     quantity = self.build_ahead_count_map.get( blueprint, 0 ) - self.dynamicresourceinstance_set.filter( buildjobresourceinstance__buildjob__isnull=True, buildjobresourceinstance__blueprint=blueprint ).count()
@@ -317,26 +312,26 @@ DynamicResource
       buildjob_resource.full_clean()
       buildjob_resource.save()
 
-      buildjob_resource.allocate()
-      buildjob_resource.build()
+      await buildjob_resource.allocate( contractor )
+      await buildjob_resource.build( contractor )
 
-  def available( self, site, quantity, interface_map ):
+  async def available( self, contractor, site, quantity, interface_map ):
     if site.name not in list( self.dynamicresourcesite_set.all().values_list( 'site', flat=True ) ):
       return False
 
     if not interface_map:  # for now this is {} when empty would be nice if it was also None, this will cover both
-      return _getAvailibleNetwork( site, quantity ) is not None
+      return await _getAvailibleNetwork( contractor, site, quantity ) is not None
 
     return True
 
-  def allocate( self, site, buildjob, buildresource, interface_map ):
+  async def allocate( self, contractor, site, buildjob, buildresource, interface_map ):
     if site.name not in list( self.dynamicresourcesite_set.all().values_list( 'site', flat=True ) ):
       raise ValueError( 'site "{0}" not in list of sites for this resource'.format( site ) )
 
     is_custom = interface_map or buildresource.config_values
 
     if not interface_map:
-      network = _getAvailibleNetwork( site, buildresource.quantity )  # yes, if we are getting only pre-allocated stuff, we are double counting the network ips, however we need ips for the new resources that are going to backfill
+      network = await _getAvailibleNetwork( contractor, site, buildresource.quantity )  # yes, if we are getting only pre-allocated stuff, we are double counting the network ips, however we need ips for the new resources that are going to backfill
       interface_map = { 'eth0': { 'network_id': network.contractor_network_id, 'address_block_id': network.contractor_addressblock_id, 'is_primary': True } }
 
     if not is_custom:  # no preallocation for non-default networks, and custom config might have values to tweek the build ie: cpu count
@@ -346,15 +341,15 @@ DynamicResource
       for index in range( 0, buildresource.quantity ):
         dynamic_resource_instance = next( dynamic_resource_instance_list, None )
         if dynamic_resource_instance is not None:
-          self._takeOver( dynamic_resource_instance, buildjob, buildresource, index )
+          await self._takeOver( contractor, dynamic_resource_instance, buildjob, buildresource, index )
         else:
-          self._createNew( site, interface_map, buildjob, buildresource, index )
+          await self._createNew( contractor, site, interface_map, buildjob, buildresource, index )
 
-      self._replenish( site, interface_map, buildresource.blueprint )
+      await self._replenish( contractor, site, interface_map, buildresource.blueprint )
 
     else:
       for index in range( 0, buildresource.quantity ):
-        self._createNew( site, interface_map, buildjob, buildresource, index )
+        await self._createNew( contractor, site, interface_map, buildjob, buildresource, index )
 
   @cinp.check_auth()
   @staticmethod
@@ -405,35 +400,31 @@ DynamicResourceInstance
   def resource( self ):
     return self.dynamic_resource
 
-  def allocate( self, blueprint, config_values, hostname ):
+  async def allocate( self, contractor, blueprint, config_values, hostname ):
     interface_map = self.interface_map
     for interface in interface_map.keys():
       if 'network_id' not in interface_map[ interface ]:
         interface_map[ interface ][ 'network_id' ] = interface_map[ interface ][ 'network' ].contractor_network_id
         interface_map[ interface ][ 'address_block_id' ] = interface_map[ interface ][ 'network' ].contractor_addressblock_id
 
-    contractor = getContractor()
-    self.contractor_foundation_id, self.contractor_structure_id = contractor.allocateDynamicResource( self.site.name, self.dynamic_resource.dynamicresourcesite_set.get( site=self.site ).complex_id, blueprint, config_values, interface_map, hostname )
+    self.contractor_foundation_id, self.contractor_structure_id = await contractor.allocateDynamicResource( self.site.name, self.dynamic_resource.dynamicresourcesite_set.get( site=self.site ).complex_id, blueprint, config_values, interface_map, hostname )
     self.full_clean()
     self.save()
 
-  def build( self ):
-    contractor = getContractor()
+  async def build( self, contractor ):
     if self.buildjobresourceinstance.auto_provision:
-      contractor.buildDynamicResource( self.contractor_foundation_id, self.contractor_structure_id )
-      contractor.registerWebHook( self.buildjobresourceinstance, True, structure_id=self.contractor_structure_id )
+      await contractor.buildDynamicResource( self.contractor_foundation_id, self.contractor_structure_id )
+      await contractor.registerWebHook( self.buildjobresourceinstance, True, structure_id=self.contractor_structure_id )
     else:
-      contractor.buildDynamicResource( self.contractor_foundation_id )
-      contractor.registerWebHook( self.buildjobresourceinstance, True, foundation_id=self.contractor_foundation_id )
+      await contractor.buildDynamicResource( self.contractor_foundation_id )
+      await contractor.registerWebHook( self.buildjobresourceinstance, True, foundation_id=self.contractor_foundation_id )
 
-  def release( self ):
-    contractor = getContractor()
-    if contractor.releaseDynamicResource( self.contractor_foundation_id, self.contractor_structure_id ):
-      contractor.registerWebHook( self.buildjobresourceinstance, False, foundation_id=self.contractor_foundation_id )
+  async def release( self, contractor ):
+    if await contractor.releaseDynamicResource( self.contractor_foundation_id, self.contractor_structure_id ):
+      await contractor.registerWebHook( self.buildjobresourceinstance, False, foundation_id=self.contractor_foundation_id )
 
-  def cleanup( self ):
-    contractor = getContractor()
-    contractor.deleteDynamicResource( self.contractor_foundation_id, self.contractor_structure_id )
+  async def cleanup( self, contractor ):
+    await contractor.deleteDynamicResource( self.contractor_foundation_id, self.contractor_structure_id )
     self.delete()
 
   @cinp.check_auth()
@@ -459,13 +450,11 @@ Network, name is the name of the SubNet/AddressBlock.
   created = models.DateTimeField( editable=False, auto_now_add=True )
   updated = models.DateTimeField( editable=False, auto_now=True )
 
-  def available( self, quantity ):  # TODO: rethink, mabey it should be a class method, and probably should return the resources, merge with allocate?
+  async def available( self, contractor, quantity ):  # TODO: rethink, mabey it should be a class method, and probably should return the resources, merge with allocate?
     if self.monolithic:
       return self.build_set.all().count() == 0
 
-    contractor = getContractor()
-
-    network = contractor.getNetworkUsage( self.contractor_addressblock_id )
+    network = await contractor.getNetworkUsage( self.contractor_addressblock_id )
     if int( network[ 'total' ] ) - ( int( network[ 'static' ] ) + int( network[ 'dynamic' ] ) + int( network[ 'reserved' ] ) ) < quantity:
       return False
 

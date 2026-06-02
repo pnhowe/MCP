@@ -1,79 +1,52 @@
-import React from 'react';
-import { connect } from 'react-redux';
-import { Alert, Box, CircularProgress, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
-import { fetchPromotionList, invalidatePromotions } from '../store/promotionsSlice';
-import type { PromotionItem } from '../store/promotionsSlice';
+import React, { useCallback, useEffect } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import ErrorPanel from './ErrorPanel';
+import { Box, CircularProgress, Table, TableBody, TableCell, TableHead, TableRow, Typography } from '@mui/material';
+import { fetchPromotionList } from '../store/promotionsSlice';
 import type { RootState, AppDispatch } from '../store';
 import { dateStr } from '../lib/utils';
 
-interface StateProps {
-  list: PromotionItem[] | null;
-  authenticated: boolean;
-  loading: boolean;
-  error: string | null;
-}
-
-type Props = StateProps & { dispatch: AppDispatch };
-
-class PromotionList extends React.Component<Props>
+const PromotionList: React.FC = () =>
 {
-  componentDidMount()
+  const dispatch = useDispatch<AppDispatch>();
+  const authenticated = useSelector( ( s: RootState ) => s.app.authenticated );
+  const { list, loading, error } = useSelector( ( s: RootState ) => s.promotions );
+
+  const fetchData = useCallback( () =>
   {
-    this.update( this.props );
-  }
+    if ( !authenticated ) return;
+    dispatch( fetchPromotionList() );
+  }, [authenticated, dispatch] );
 
-  componentDidUpdate( prevProps: Props )
-  {
-    if ( ( !prevProps.authenticated && this.props.authenticated ) ||
-         ( prevProps.list !== null && this.props.list === null ) )
-    {
-      this.update( this.props );
-    }
-  }
+  useEffect( () => { fetchData(); }, [fetchData] );
 
-  update( props: Props )
-  {
-    props.dispatch( invalidatePromotions() );
-    props.dispatch( fetchPromotionList() );
-  }
+  if ( loading ) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}><CircularProgress size={ 24 } /></Box>;
+  if ( error ) return <ErrorPanel error={ error } onRetry={ fetchData } />;
 
-  render()
-  {
-    if ( this.props.loading ) return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}><CircularProgress size={ 24 } /></Box>;
-    if ( this.props.error ) return <Alert severity="error">{ this.props.error }</Alert>;
+  const items = list || [];
 
-    const list = this.props.list || [];
+  if ( items.length === 0 ) return <Typography variant="body2" color="text.secondary">No promotions in process.</Typography>;
 
-    if ( list.length === 0 ) return <Typography variant="body2" color="text.secondary">No promotions in process.</Typography>;
-
-    return (
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell>Tag</TableCell>
-            <TableCell>Result Map</TableCell>
-            <TableCell>Created</TableCell>
+  return (
+    <Table size="small">
+      <TableHead>
+        <TableRow>
+          <TableCell>Tag</TableCell>
+          <TableCell>Result Map</TableCell>
+          <TableCell>Created</TableCell>
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        { items.map( ( item ) => (
+          <TableRow key={ item.id.toString() }>
+            <TableCell>{ item.tag }</TableCell>
+            <TableCell>{ JSON.stringify( item.result_map ) }</TableCell>
+            <TableCell>{ dateStr( item.created ) }</TableCell>
           </TableRow>
-        </TableHead>
-        <TableBody>
-          { list.map( ( item ) => (
-            <TableRow key={ item.uri }>
-              <TableCell>{ item.tag }</TableCell>
-              <TableCell>{ JSON.stringify( item.result_map ) }</TableCell>
-              <TableCell>{ dateStr( item.created ) }</TableCell>
-            </TableRow>
-          ) ) }
-        </TableBody>
-      </Table>
-    );
-  }
-}
+        ) ) }
+      </TableBody>
+    </Table>
+  );
+};
 
-const mapStateToProps = ( state: RootState ) => ( {
-  list: state.promotions.list,
-  authenticated: state.app.authenticated,
-  loading: state.promotions.loading,
-  error: state.promotions.error,
-} );
-
-export default connect( mapStateToProps )( PromotionList );
+export default PromotionList;

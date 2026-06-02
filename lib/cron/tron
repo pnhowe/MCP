@@ -14,6 +14,7 @@ django.setup()
 import logging
 import sys
 import cinp
+import asyncio
 from logging.handlers import SysLogHandler
 from datetime import datetime, timezone
 
@@ -25,6 +26,129 @@ from mcp.lib.Slack import getSlack
 PID_FILE = '/var/run/mcp/tron.pid'
 
 QUEUE_PRIORITY = 100
+
+
+async def _tagCommit( packrat, slack, commit, tag ):
+  for package_file in PackageFile.objects.filter( commit=commit ):
+    logging.info( 'Tagging package "{0}" with "{1}"...'.format( package_file.filename, tag ) )
+    await packrat.tag( package_file.packrat_id, tag )
+    slack.post_message( 'Tagged package "{0}" with "{1}".'.format( package_file.filename, tag ), slack.SUCCESS )
+
+
+async def _failCommit( packrat, slack, commit ):
+  for package_file in PackageFile.objects.filter( commit=commit ):
+    logging.info( 'Failing package "{0}"...'.format( package_file.filename ) )
+    await packrat.fail( package_file.packrat_id )
+    slack.post_message( 'Failed package "{0}".'.format( package_file.filename ), slack.ERROR )
+
+
+async def _queuePromotion( packrat, slack, commit, package_list, tag ):
+  dependancy_list = BuildDependancy.objects.filter( package__in=package_list, tag=tag )
+  if len( dependancy_list ) == 0:
+    logging.info( 'No Dependancies for Commit "{0}" for tag "{1}", setting tags...'.format( commit.commit, tag ) )
+    await _tagCommit( packrat, slack, commit, tag )
+    return
+
+  logging.info( 'Creating Promotion check for Commit "{0}" for tag "{1}"...'.format( commit.commit, tag ) )
+  promotion = Promotion()
+  promotion.commit = commit
+  promotion.tag = tag
+  promotion.full_clean()
+  promotion.save()
+
+  for dependancy in dependancy_list:
+    promition_build = PromotionBuild()
+    promition_build.promotion = promotion
+    promition_build.build = dependancy.build
+    promition_build.status = 'queued'
+    promition_build.full_clean()
+    promition_build.save()
+    promotion.queueitem_set.add( QueueItem.inQueueBuild( dependancy.build, dependancy.build.project.release_branch, False, QUEUE_PRIORITY, '*AUTO*', promotion=promotion ) )
+
+  logging.info( 'Tagging Commit "{0}" with "{1}"'.format( commit.commit, tag ) )
+  await _tagCommit( packrat, slack, commit, tag )
+  slack.post_message( 'Commit "{0}" tagged with "{1}" '.format( commit.commit, tag ), slack.SUCCESS )
+
+
+async def main():
+  slack = getSlack( 'tron' )
+
+  try:
+    async with getPackrat() as packrat:
+      await _run( slack, packrat )
+  except Exception as e:
+    logging.exception( 'Exception "{0}" trying to connect to contractor and or slack, try again later'.format( e ) )
+
+
+async def _run( slack, packrat ):
+  tag_requirements_map = dict( [ ( k, set( [ i.split( ':' )[1] for i in v ] ) ) for ( k, v ) in ( await packrat.tag_requirements_map() ).items() ] )  # this makes sure the requrement values are unique
+  available_tag_set = set( tag_requirements_map.keys() )
+
+  for promotion in Promotion.objects.filter( done_at__isnull=True ):
+    logging.debug( 'Checking promtion "{0}"...'.format( promotion ) )
+    done = True
+    success = True
+    for promotion_build in promotion.promotionbuild_set.all():
+      done &= ( promotion_build.status == 'done' )
+      success &= bool( promotion_build.success )
+
+    if not done:
+      continue
+
+    if success:
+      slack.post_message( 'Promotion Job for Commit "{0}" tag "{1}" passed.'.format( promotion.commit.commit, promotion.tag ), slack.SUCCESS )
+      logging.info( 'Promotion Job for Commit "{0}" tag "{1}" passed.'.format( promotion.commit.commit, promotion.tag ) )
+
+    else:
+      slack.post_message( 'Promotion Job for Commit "{0}" tag "{1}" Failed.'.format( promotion.commit.commit, promotion.tag ), slack.ERROR )
+      logging.info( 'Failing Commit "{0}"...'.format( promotion.commit.commit ) )
+      await _failCommit( packrat, slack, promotion.commit )
+
+    promotion.done_at = datetime.now( timezone.utc )
+    promotion.full_clean()
+    promotion.save()
+
+  # look for promotion to cleanup
+  for promotion in Promotion.objects.filter( done_at__isnull=False ):
+    if PackageFile.objects.filter( commit=promotion.commit ).count() == 0:
+      promotion.delete()
+
+  # iterate over groups of package files
+  for commit in Commit.objects.filter( done_at__isnull=False ).exclude( packagefile=None ):
+    if None in [ i.done_at for i in commit.promotion_set.all() ]:
+      logging.info( 'Commit "{0}" has on going promotions, skipping...'.format( commit.commit ) )
+      continue
+
+    id_list = list( PackageFile.objects.filter( commit=commit ).values_list( 'packrat_id', flat=True ) )
+    to_tag_list = []
+    todo_tag_set = set()
+
+    while id_list:
+      packagefile_id = id_list.pop()
+      try:
+        package_file = await packrat.cinp.get( packagefile_id )
+      except cinp.client.NotFound:
+        logging.info( 'Package File "{0}" in Commit "{1}" disapeared, deleting...'.format( packagefile_id, commit.commit ) )
+        PackageFile.objects.get( packrat_id=packagefile_id ).delete()
+        continue
+
+      if package_file[ 'deprocated_at' ] or package_file[ 'failed_at' ]:  # we don't care about this file anymore, move along
+        logging.info( 'Package File "{0}" in Commit "{1}" is deprocated/failed, skipping...'.format( packagefile_id, commit.commit ) )
+        continue
+
+      to_tag_list.append( packagefile_id )
+      todo_tag_set = todo_tag_set.union( ( available_tag_set - set( package_file[ 'tags' ] ) ) )
+
+    if not to_tag_list:  # nothing to do this time, try again next time, the packagefiles are either deleted or deprated/failed
+      continue
+
+    min_set_tags = available_tag_set - todo_tag_set
+    for tag in todo_tag_set:  # Iterate over all the tags not yet set
+      if len( tag_requirements_map[ tag ] - min_set_tags ) != 0:  # Not all requiremenets are met
+        continue
+
+      package_list = Package.objects.filter( packagefile__packrat_id__in=to_tag_list )
+      await _queuePromotion( packrat, slack, commit, package_list, tag )
 
 logging.basicConfig()
 logger = logging.getLogger()
@@ -47,133 +171,10 @@ tmp = open( PID_FILE, 'w' )
 tmp.write( '{0}\n'.format( os.getpid() ) )
 tmp.close()
 
-try:
-  slack = getSlack( 'tron' )
-  packrat = getPackrat()
-except Exception as e:
-  logging.exception( 'Exception "{0}" trying to connect to slack and/or packrat, try again later'.format( e ) )
-  os.unlink( PID_FILE )
-  logging.shutdown()
-  sys.exit( 0 )
-
-tag_requirements_map = dict( [ ( k, set( [ i.split( ':' )[1] for i in v ] ) ) for ( k, v ) in packrat.tag_requirements_map().items() ] )  # this makes sure the requrement values are unique
-available_tag_set = set( tag_requirements_map.keys() )
-
-
-def _tagCommit( commit, tag ):
-  for package_file in PackageFile.objects.filter( commit=commit ):
-    logging.info( 'Tagging package "{0}" with "{1}"...'.format( package_file.filename, tag ) )
-    packrat.tag( package_file.packrat_id, tag )
-    slack.post_message( 'Tagged package "{0}" with "{1}".'.format( package_file.filename, tag ), slack.SUCCESS )
-
-
-def _failCommit( commit ):
-  for package_file in PackageFile.objects.filter( commit=commit ):
-    logging.info( 'Failing package "{0}"...'.format( package_file.filename ) )
-    packrat.fail( package_file.packrat_id )
-    slack.post_message( 'Failed package "{0}".'.format( package_file.filename ), slack.ERROR )
-
-
-def _queuePromotion( commit, package_list, tag ):
-  dependancy_list = BuildDependancy.objects.filter( package__in=package_list, tag=tag )
-  if len( dependancy_list ) == 0:
-    logging.info( 'No Dependancies for Commit "{0}" for tag "{1}", setting tags...'.format( commit.commit, tag ) )
-    _tagCommit( commit, tag )
-    return
-
-  logging.info( 'Creating Promotion check for Commit "{0}" for tag "{1}"...'.format( commit.commit, tag ) )
-  promotion = Promotion()
-  promotion.commit = commit
-  promotion.tag = tag
-  promotion.full_clean()
-  promotion.save()
-
-  for dependancy in dependancy_list:
-    promition_build = PromotionBuild()
-    promition_build.promotion = promotion
-    promition_build.build = dependancy.build
-    promition_build.status = 'queued'
-    promition_build.full_clean()
-    promition_build.save()
-    promotion.queueitem_set.add( QueueItem.inQueueBuild( dependancy.build, dependancy.build.project.release_branch, False, QUEUE_PRIORITY, '*AUTO*', promotion=promotion ) )
-
-  logging.info( 'Tagging Commit "{0}" with "{1}"'.format( commit.commit, tag ) )
-  _tagCommit( commit, tag )
-  slack.post_message( 'Commit "{0}" tagged with "{1}" '.format( commit.commit, tag ), slack.SUCCESS )
-
-
-# look for promotion that is done
-for promotion in Promotion.objects.filter( done_at__isnull=True ):
-  logging.debug( 'Checking promtion "{0}"...'.format( promotion ) )
-  done = True
-  success = True
-  for promotion_build in promotion.promotionbuild_set.all():
-    done &= ( promotion_build.status == 'done' )
-    success &= bool( promotion_build.success )
-
-  if not done:
-    continue
-
-  if success:
-    slack.post_message( 'Promotion Job for Commit "{0}" tag "{1}" passed.'.format( promotion.commit.commit, promotion.tag ), slack.SUCCESS )
-    logging.info( 'Promotion Job for Commit "{0}" tag "{1}" passed.'.format( promotion.commit.commit, promotion.tag ) )
-
-  else:
-    slack.post_message( 'Promotion Job for Commit "{0}" tag "{1}" Failed.'.format( promotion.commit.commit, promotion.tag ), slack.ERROR )
-    logging.info( 'Failing Commit "{0}"...'.format( promotion.commit.commit ) )
-    _failCommit( promotion.commit )
-
-  promotion.done_at = datetime.now( timezone.utc )
-  promotion.full_clean()
-  promotion.save()
-
-
-# look for promotion to cleanup
-for promotion in Promotion.objects.filter( done_at__isnull=False ):
-  if PackageFile.objects.filter( commit=promotion.commit ).count() == 0:
-    promotion.delete()
-
-
-# iterate over groups of package files
-for commit in Commit.objects.filter( done_at__isnull=False ).exclude( packagefile=None ):
-  if None in [ i.done_at for i in commit.promotion_set.all() ]:
-    logging.info( 'Commit "{0}" has on going promotions, skipping...'.format( commit.commit ) )
-    continue
-
-  id_list = list( PackageFile.objects.filter( commit=commit ).values_list( 'packrat_id', flat=True ) )
-  to_tag_list = []
-  todo_tag_set = set()
-
-  while id_list:
-    packagefile_id = id_list.pop()
-    try:
-      package_file = packrat.cinp.get( packagefile_id )
-    except cinp.client.NotFound:
-      logging.info( 'Package File "{0}" in Commit "{1}" disapeared, deleting...'.format( packagefile_id, commit.commit ) )
-      PackageFile.objects.get( packrat_id=packagefile_id ).delete()
-      continue
-
-    if package_file[ 'deprocated_at' ] or package_file[ 'failed_at' ]:  # we don't care about this file anymore, move along
-      logging.info( 'Package File "{0}" in Commit "{1}" is deprocated/failed, skipping...'.format( packagefile_id, commit.commit ) )
-      continue
-
-    to_tag_list.append( packagefile_id )
-    todo_tag_set = todo_tag_set.union( ( available_tag_set - set( package_file[ 'tags' ] ) ) )
-
-  if not to_tag_list:  # nothing to do this time, try again next time, the packagefiles are either deleted or deprated/failed
-    continue
-
-  min_set_tags = available_tag_set - todo_tag_set
-  for tag in todo_tag_set:  # Iterate over all the tags not yet set
-    if len( tag_requirements_map[ tag ] - min_set_tags ) != 0:  # Not all requiremenets are met
-      continue
-
-    package_list = Package.objects.filter( packagefile__packrat_id__in=to_tag_list )
-    _queuePromotion( commit, package_list, tag )
-
-packrat.logout()
-
-os.unlink( PID_FILE )
+# Django's ORM isn't async safe, but we are single threaded here and only doing one ORM call at a time, so it should be ok. or So Claude asures me.
+os.environ[ 'DJANGO_ALLOW_ASYNC_UNSAFE' ] = 'true'
+asyncio.run( main() )
 logging.info( 'Done!' )
 logging.shutdown()
+os.unlink( PID_FILE )
 sys.exit( 0 )

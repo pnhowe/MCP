@@ -2,10 +2,9 @@ import re
 import os
 import base64
 import difflib
-from datetime import datetime
+from datetime import datetime, timezone
 
 from django.db import models
-from django.utils import timezone
 from django.core.exceptions import ValidationError, ObjectDoesNotExist
 from django.conf import settings
 
@@ -286,7 +285,7 @@ This is a Generic Project
   def filter_my_projects():
     return Project.objects.all()
 
-  # @cinp.list_filter( name='my_projects', paramater_type_list=[ { 'type': '_USER_' } ] )
+  # @cinp.list_filter( name='my_projects', parameter_type_list=[ { 'type': '_USER_' } ] )
   # @staticmethod
   # def filter_my_projects( user ):
   #   if user.is_anonymous():
@@ -474,39 +473,39 @@ A Single Commit of a Project
 
   @property
   def summary( self ):
-    result = { 'test': {}, 'lint': {} }
+    result = { 'test': {}, 'lint': {}, 'build': {} }
 
     overall_complete = True
     overall_success = True
 
     score_list = []
     complete = True
-    success = True
-    for ( name, value ) in self.lint_results.items():
+    success_list = []
+    for ( _, value ) in self.lint_results.items():
       if value.get( 'score', None ) is not None:
         score_list.append( value[ 'score' ]  )
 
       complete &= value.get( 'status', '' ) == 'done'
-      success &= value.get( 'success', False )
+      success_list.append( value.get( 'success', False ) )
 
     if score_list:
       result[ 'lint' ][ 'score' ] = sum( score_list ) / len( score_list )
     else:
       result[ 'lint' ][ 'score' ] = None
 
-    if not complete:
-      result[ 'lint' ][ 'status' ] = 'Incomplete'
-    elif success:
-      result[ 'lint' ][ 'status' ] = 'Success'
+    if ( not success_list and self.test_at ) or ( success_list and complete and all( success_list ) ):
+        result[ 'lint' ][ 'status' ] = 'Success'
+    elif not all( success_list ):
+        result[ 'lint' ][ 'status' ] = 'Failed'
     else:
-      result[ 'lint' ][ 'status' ] = 'Failed'
+        result[ 'lint' ][ 'status' ] = 'Incomplete'
 
     overall_complete &= complete
-    overall_success &= success
+    overall_success &= all( success_list )
 
     score_list = []
     complete = True
-    success = True
+    success_list = []
     for ( _, value ) in self.test_results.items():
       if value.get( 'score', None ) is not None:
         try:
@@ -515,58 +514,57 @@ A Single Commit of a Project
           score_list.append( 0.0 )
 
       complete &= value.get( 'status', '' ) == 'done'
-      success &= value.get( 'success', False )
+      success_list.append( value.get( 'success', False ) )
 
     if score_list:
       result[ 'test' ][ 'score' ] = sum( score_list ) / len( score_list )
     else:
       result[ 'test' ][ 'score' ] = None
 
-    if not complete:
-      result[ 'test' ][ 'status' ] = 'Incomplete'
-    elif success:
-      result[ 'test' ][ 'status' ] = 'Success'
+    if ( not success_list and self.test_at ) or ( success_list and complete and all( success_list ) ):
+        result[ 'test' ][ 'status' ] = 'Success'
+    elif not all( success_list ):
+        result[ 'test' ][ 'status' ] = 'Failed'
     else:
-      result[ 'test' ][ 'status' ] = 'Failed'
+        result[ 'test' ][ 'status' ] = 'Incomplete'
 
     overall_complete &= complete
-    overall_success &= success
+    overall_success &= all( success_list )
 
     complete = True
-    success = True
+    success_list = []
     for target in self.build_results:
       for ( _, value ) in self.build_results[ target ].items():
         complete &= value.get( 'status', '' ) == 'done'
-        success &= value.get( 'success', False )
+        success_list.append( value.get( 'success', False ) )
 
-    result[ 'build' ] = {}
-    if not complete:
-      result[ 'build' ][ 'status' ] = 'Incomplete'
-    elif success:
-      result[ 'build' ][ 'status' ] = 'Success'
+    if ( not success_list and self.build_at ) or ( success_list and complete and all( success_list ) ):
+        result[ 'build' ][ 'status' ] = 'Success'
+    elif not all( success_list ):
+        result[ 'build' ][ 'status' ] = 'Failed'
     else:
-      result[ 'build' ][ 'status' ] = 'Failed'
+        result[ 'build' ][ 'status' ] = 'Incomplete'
 
     overall_complete &= complete
-    overall_success &= success
+    overall_success &= all( success_list )
 
     if self.branch == self.project.release_branch:
       complete = True
-      success = True
+      success_list = []
       for ( _, value ) in self.doc_results.items():
         complete &= value.get( 'status', '' ) == 'done'
-        success &= value.get( 'success', False )
+        success_list.append( value.get( 'success', False ) )
 
       result[ 'doc' ] = {}
-      if not complete:
-        result[ 'doc' ][ 'status' ] = 'Incomplete'
-      elif success:
-        result[ 'doc' ][ 'status' ] = 'Success'
+      if ( not success_list and self.doc_at ) or ( success_list and complete and all( success_list ) ):
+          result[ 'doc' ][ 'status' ] = 'Success'
+      elif not all( success_list ):
+          result[ 'doc' ][ 'status' ] = 'Failed'
       else:
-        result[ 'doc' ][ 'status' ] = 'Failed'
+          result[ 'doc' ][ 'status' ] = 'Incomplete'
 
     overall_complete &= complete
-    overall_success &= success
+    overall_success &= all( success_list )
 
     if not overall_success:
       result[ 'status' ] = 'Failed'
@@ -758,12 +756,12 @@ A Single Commit of a Project
 
     self.project.internal_git.tag( self.version, _commitSumary2Str( self.summary ) )
 
-  @cinp.list_filter( name='project', paramater_type_list=[ { 'type': 'Model', 'model': Project } ] )
+  @cinp.list_filter( name='project', parameter_type_list=[ { 'type': 'Model', 'model': Project } ] )
   @staticmethod
   def filter_project( project ):
     return Commit.objects.filter( project=project ).order_by( '-created' )
 
-  @cinp.list_filter( name='in_process', paramater_type_list=[] )
+  @cinp.list_filter( name='in_process', parameter_type_list=[] )
   @staticmethod
   def filter_in_process():
     return Commit.objects.filter( done_at__isnull=True )
@@ -802,12 +800,12 @@ class PackageFile( models.Model ):  # TODO: move this to Project and tie to the 
   created = models.DateTimeField( editable=False, auto_now_add=True )
   updated = models.DateTimeField( editable=False, auto_now=True )
 
-  @cinp.list_filter( name='project', paramater_type_list=[ { 'type': 'Model', 'model': Package } ] )
+  @cinp.list_filter( name='project', parameter_type_list=[ { 'type': 'Model', 'model': Package } ] )
   @staticmethod
   def filter_package( package ):
     return PackageFile.objects.filter( package=package ).order_by( '-created' )
 
-  @cinp.list_filter( name='commit', paramater_type_list=[ { 'type': 'Model', 'model': Commit } ] )
+  @cinp.list_filter( name='commit', parameter_type_list=[ { 'type': 'Model', 'model': Commit } ] )
   @staticmethod
   def filter_commit( commit ):
     return PackageFile.objects.filter( commit=commit ).order_by( '-created' )
@@ -840,7 +838,7 @@ This is a type of Build that can be done
   created = models.DateTimeField( editable=False, auto_now_add=True )
   updated = models.DateTimeField( editable=False, auto_now=True )
 
-  @cinp.list_filter( name='project', paramater_type_list=[ { 'type': 'Model', 'model': Project } ] )
+  @cinp.list_filter( name='project', parameter_type_list=[ { 'type': 'Model', 'model': Project } ] )
   @staticmethod
   def filter_project( project ):
     return Build.objects.filter( project=project )

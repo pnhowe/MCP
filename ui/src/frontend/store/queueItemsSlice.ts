@@ -17,7 +17,7 @@ export const fetchQueueItem = createAuthThunk( 'queueItems/fetchOne', async ( id
   return mcp.Processor_QueueItem_get( parseInt( id ) );
 } );
 
-const queueItemsSlice = createDetailListSlice( {
+const queueItemsSlice = createDetailListSlice<Processor_QueueItem, Processor_QueueItem>( {
   name: 'queueItems',
   fetchList: fetchQueueItemList,
   fetchOne: fetchQueueItem,

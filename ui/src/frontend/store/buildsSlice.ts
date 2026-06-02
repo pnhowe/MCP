@@ -14,7 +14,7 @@ export const fetchBuild = createAuthThunk( 'builds/fetchOne', async ( key: strin
   return mcp.Project_Build_get( key );
 } );
 
-const buildsSlice = createDetailListSlice( {
+const buildsSlice = createDetailListSlice<Project_Build, Project_Build>( {
   name: 'builds',
   fetchList: fetchBuildList,
   fetchOne: fetchBuild,

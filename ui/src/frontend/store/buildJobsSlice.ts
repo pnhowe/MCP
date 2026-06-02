@@ -17,7 +17,7 @@ export const fetchBuildJob = createAuthThunk( 'buildJobs/fetchOne', async ( id: 
   return mcp.Processor_BuildJob_get( parseInt( id ) );
 } );
 
-const buildJobsSlice = createDetailListSlice( {
+const buildJobsSlice = createDetailListSlice<Processor_BuildJob, Processor_BuildJob>( {
   name: 'buildJobs',
   fetchList: fetchBuildJobList,
   fetchOne: fetchBuildJob,

@@ -14,6 +14,7 @@ django.setup()
 
 import sys
 import logging
+import asyncio
 from logging.handlers import SysLogHandler
 from datetime import datetime, timezone
 from cinp import client
@@ -27,6 +28,196 @@ from mcp.lib.SCM import SCMException
 PID_FILE = '/var/run/mcp/recoginzer.pid'
 
 QUEUE_PRIORITY = 100
+
+
+async def main():
+  slack = getSlack( 'recognizer' )
+
+  try:
+    async with getPackrat() as packrat:
+      await _run( slack, packrat )
+  except Exception as e:
+    logging.exception( 'Exception "{0}" trying to connect to contractor and or slack, try again later'.format( e ) )
+
+
+async def _run( slack, packrat ):
+  # check for commits that need testing
+  for commit in Commit.objects.filter( done_at__isnull=True, test_at__isnull=True ):
+    if not commit.test_results:
+      slack.post_message( 'No Test for "{0}", branch "{1}".'.format( commit.project.name, commit.branch ), slack.INFO )
+      commit.test_at = datetime.now( timezone.utc )
+      commit.full_clean()
+      commit.save()
+      continue
+
+    done = True
+    success = True
+    for blueprint in commit.test_results:
+      if not commit.test_results[ blueprint ].get( 'status', None ):
+        logging.info( 'Queuing up Test job for "{0}", branch "{1}", blueprint "{2}"'.format( commit.project.name, commit.branch, blueprint ) )
+        try:
+          _ = QueueItem.inQueueTarget( commit.project, commit.branch, False, blueprint, 'test', QUEUE_PRIORITY, '*AUTO*', commit )
+          commit.test_results[ blueprint ][ 'status' ] = 'building'
+
+        except Exception as e:
+          commit.test_results[ blueprint ][ 'status' ] = 'done'
+          commit.test_results[ blueprint ][ 'results' ] = 'Exception Queuing: "{0}"'.format( e )
+
+      done &= commit.test_results[ blueprint ][ 'status' ] == 'done'
+      success &= commit.test_results[ blueprint ].get( 'success', False )
+
+    if done:
+      logging.info( 'Test Complete for "{0}", branch "{1}"'.format( commit.project.name, commit.branch ) )
+      commit.test_at = datetime.now( timezone.utc )
+      if not success:
+        logging.info( 'Test for "{0}", branch "{1}" failed'.format( commit.project.name, commit.branch ) )
+        commit.done_at = datetime.now( timezone.utc )
+        slack.post_message( 'Test for "{0}", branch "{1}" Failed.'.format( commit.project.name, commit.branch ), slack.ERROR )
+        try:
+          commit.postResults()
+        except SCMException:
+          slack.post_message( 'Unable to Post Results for Commit, commit "{0}" of Project "{1}" Branch "{2}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
+
+      else:
+        slack.post_message( 'Test for "{0}", branch "{1}" Success.'.format( commit.project.name, commit.branch ), slack.SUCCESS )
+
+    commit.full_clean()
+    commit.save()
+
+  # check for commits that need building
+  for commit in Commit.objects.filter( done_at__isnull=True, test_at__isnull=False, build_at__isnull=True ):
+    if not commit.build_results:
+      slack.post_message( 'No Build for "{0}".'.format( commit.project.name ), slack.INFO )
+      commit.build_at = datetime.now( timezone.utc )
+      commit.full_clean()
+      commit.save()
+      continue
+
+    done = True
+    success = True
+    for target in commit.build_results:
+      for blueprint in commit.build_results[ target ]:
+        if not commit.build_results[ target ][ blueprint ].get( 'status', None ):
+          logging.info( 'Queuing up "{0}" job for "{1}", branch "{2}", blueprint "{3}"'.format( target, commit.project.name, commit.branch, blueprint ) )
+          try:
+            _ = QueueItem.inQueueTarget( commit.project, commit.branch, False, blueprint, target, QUEUE_PRIORITY, '*AUTO*', commit )
+            commit.build_results[ target ][ blueprint ][ 'status' ] = 'building'
+
+          except Exception as e:
+            commit.build_results[ target ][ blueprint ][ 'status' ] = 'done'
+            commit.build_results[ target ][ blueprint ][ 'results' ] = 'Exception Queuing: "{0}"'.format( e )
+
+        done &= commit.build_results[ target ][ blueprint ][ 'status' ] == 'done'
+        success &= commit.build_results[ target ][ blueprint ].get( 'success', False )
+
+    if done:
+      logging.info( 'Build Complete for "{0}" of "{1}" branch "{2}" Complete'.format( commit.commit, commit.project.name, commit.branch ) )
+      commit.build_at = datetime.now( timezone.utc )
+      if not success:
+        logging.info( 'Build for "{0}" of "{1}" branch "{2}" Failed'.format( commit.commit, commit.project.name, commit.branch ) )
+        commit.done_at = datetime.now( timezone.utc )
+        slack.post_message( 'Build for "{0}" of "{1}", branch "{2}" Failed.'.format( commit.commit, commit.project.name, commit.branch ), slack.ERROR )
+        try:
+          commit.postResults()
+        except SCMException:
+          slack.post_message( 'Unable to Post Results for Commit, commit "{0}" of Project "{1}" Branch "{2}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
+
+        # clean up any package file that might of been uploaded to packrat
+        if commit.branch == commit.project.release_branch:  # tag version
+          for filename, uri in commit.package_file_map.items():
+            try:
+              await packrat.cinp.delete( uri )
+            except client.NotFound:
+              continue
+
+      else:
+        slack.post_message( 'Build for "{0}" of "{1}", branch "{2}" Finished.'.format( commit.commit, commit.project.name, commit.branch ), slack.SUCCESS )
+
+    commit.full_clean()
+    commit.save()
+
+  # check for commits that need doc
+  for commit in Commit.objects.filter( done_at__isnull=True, test_at__isnull=False, build_at__isnull=False, doc_at__isnull=True ):
+    if commit.branch != commit.project.release_branch:
+      commit.doc_at = datetime.now( timezone.utc )
+      commit.full_clean()
+      commit.save()
+      continue
+
+    if not commit.doc_results:
+      slack.post_message( 'No Doc for "{0}".'.format( commit.project.name ), slack.INFO )
+      commit.doc_at = datetime.now( timezone.utc )
+      commit.full_clean()
+      commit.save()
+      continue
+
+    done = True
+    success = True
+    for blueprint in commit.doc_results:
+      if not commit.doc_results[ blueprint ].get( 'status', None ):
+        logging.info( 'Queuing up Doc job for "{0}", branch "{1}", blueprint "{2}"'.format( commit.project.name, commit.branch, blueprint ) )
+        try:
+          _ = QueueItem.inQueueTarget( commit.project, commit.branch, False, blueprint, 'doc', QUEUE_PRIORITY, '*AUTO*', commit )
+          commit.doc_results[ blueprint ][ 'status' ] = 'building'
+
+        except Exception as e:
+          commit.doc_results[ blueprint ][ 'status' ] = 'done'
+          commit.doc_results[ blueprint ][ 'results' ] = 'Exception Queuing: "{0}"'.format( e )
+
+      done &= commit.doc_results[ blueprint ][ 'status' ] == 'done'
+      success &= commit.doc_results[ blueprint ].get( 'success', False )
+
+    if done:  # failed doc building dosen't block anything, just make the comment and move on
+      logging.info( 'Doc Complete for "{0}", branch "{1}"'.format( commit.project.name, commit.branch ) )
+      commit.doc_at = datetime.now( timezone.utc )
+      if not success:
+        logging.info( 'Doc for "{0}", branch "{1}" failed'.format( commit.project.name, commit.branch ) )
+        slack.post_message( 'Doc for "{0}", branch "{1}" Failed.'.format( commit.project.name, commit.branch ), slack.ERROR )
+
+      else:
+        slack.post_message( 'Doc for "{0}", branch "{1}" Success.'.format( commit.project.name, commit.branch ), slack.SUCCESS )
+
+    commit.full_clean()
+    commit.save()
+
+  # check for commits that are done
+  for commit in Commit.objects.filter( done_at__isnull=True, test_at__isnull=False, build_at__isnull=False, doc_at__isnull=False ):
+    if commit.branch == commit.project.release_branch:  # tag version
+
+      # only look to tag new package files on the release branch, they shold only be created on release branch anyway
+      for filename, uri in commit.package_file_map.items():
+        packrat_packagefile = await packrat.cinp.get( uri )
+        try:
+          package = Package.objects.get( packrat_id=packrat_packagefile[ 'package' ] )
+        except Package.DoesNotExist:
+          packrat_package = await packrat.cinp.get( packrat_packagefile[ 'package' ] )
+          package = Package( name=packrat_package[ 'name' ], packrat_id=packrat_packagefile[ 'package' ] )
+          package.full_clean()
+          package.save()
+
+        packagefile = PackageFile( filename=filename, packrat_id=uri )
+        packagefile.package = package
+        packagefile.commit = commit
+        packagefile.full_clean()
+        packagefile.save()
+
+      slack.post_message( 'Tagging "{0}" with tag "{1}".'.format( commit.project.name, commit.version ), slack.INFO )
+      try:
+        commit.tagVersion()
+      except Exception as e:
+        logging.warn( 'Exception while Tagging "{0}" with "{1}": "{2}"'.format( commit.project.name, commit.version, e ) )
+        slack.post_message( 'Tagging "{0}" with tag "{1}" Failed.'.format( commit.project.name, commit.version ), slack.ERROR )
+
+    slack.post_message( 'Commit "{0}" of "{1}", branch "{2}" Finished.'.format( commit.commit, commit.project.name, commit.branch ), slack.DONE )
+    commit.done_at = datetime.now( timezone.utc )
+    try:
+      commit.postResults()
+    except SCMException:
+      slack.post_message( 'Unable to Post Results for Commit, commit "{0}" of Project "{1}" Branch "{2}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
+    commit.full_clean()
+    commit.save()
+    continue
+
 
 logging.basicConfig()
 logger = logging.getLogger()
@@ -49,202 +240,10 @@ tmp = open( PID_FILE, 'w' )
 tmp.write( '{0}\n'.format( os.getpid() ) )
 tmp.close()
 
-try:
-  slack = getSlack( 'recognizer' )
-except Exception as e:
-  logging.exception( 'Exception "{0}" trying to connect to slack, try again later'.format( e ) )
-  os.unlink( PID_FILE )
-  logging.shutdown()
-  sys.exit( 0 )
-
-packrat = None  # need to catch packrat connection errors, like the others?
-
-# check for commits that need testing
-for commit in Commit.objects.filter( done_at__isnull=True, test_at__isnull=True ):
-  if not commit.test_results:
-    slack.post_message( 'No Test for "{0}", branch "{1}".'.format( commit.project.name, commit.branch ), slack.INFO )
-    commit.test_at = datetime.now( timezone.utc )
-    commit.full_clean()
-    commit.save()
-    continue
-
-  done = True
-  success = True
-  for blueprint in commit.test_results:
-    if not commit.test_results[ blueprint ].get( 'status', None ):
-      logging.info( 'Queuing up Test job for "{0}", branch "{1}", blueprint "{2}"'.format( commit.project.name, commit.branch, blueprint ) )
-      try:
-        item = QueueItem.inQueueTarget( commit.project, commit.branch, False, blueprint, 'test', QUEUE_PRIORITY, '*AUTO*', commit )
-        commit.test_results[ blueprint ][ 'status' ] = 'building'
-
-      except Exception as e:
-        commit.test_results[ blueprint ][ 'status' ] = 'done'
-        commit.test_results[ blueprint ][ 'results' ] = 'Exception Queuing: "{0}"'.format( e )
-
-    done &= commit.test_results[ blueprint ][ 'status' ] == 'done'
-    success &= commit.test_results[ blueprint ].get( 'success', False )
-
-  if done:
-    logging.info( 'Test Complete for "{0}", branch "{1}"'.format( commit.project.name, commit.branch ) )
-    commit.test_at = datetime.now( timezone.utc )
-    if not success:
-      logging.info( 'Test for "{0}", branch "{1}" failed'.format( commit.project.name, commit.branch ) )
-      commit.done_at = datetime.now( timezone.utc )
-      slack.post_message( 'Test for "{0}", branch "{1}" Failed.'.format( commit.project.name, commit.branch ), slack.ERROR )
-      try:
-        commit.postResults()
-      except SCMException:
-        slack.post_message( 'Unable to Post Results for Commit, commit "{0}" of Project "{1}" Branch "{2}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
-
-    else:
-      slack.post_message( 'Test for "{0}", branch "{1}" Success.'.format( commit.project.name, commit.branch ), slack.SUCCESS )
-
-  commit.full_clean()
-  commit.save()
-
-# check for commits that need building
-for commit in Commit.objects.filter( done_at__isnull=True, test_at__isnull=False, build_at__isnull=True ):
-  if not commit.build_results:
-    slack.post_message( 'No Build for "{0}".'.format( commit.project.name ), slack.INFO )
-    commit.build_at = datetime.now( timezone.utc )
-    commit.full_clean()
-    commit.save()
-    continue
-
-  done = True
-  success = True
-  for target in commit.build_results:
-    for blueprint in commit.build_results[ target ]:
-      if not commit.build_results[ target ][ blueprint ].get( 'status', None ):
-        logging.info( 'Queuing up "{0}" job for "{1}", branch "{2}", blueprint "{3}"'.format( target, commit.project.name, commit.branch, blueprint ) )
-        try:
-          item = QueueItem.inQueueTarget( commit.project, commit.branch, False, blueprint, target, QUEUE_PRIORITY, '*AUTO*', commit )
-          commit.build_results[ target ][ blueprint ][ 'status' ] = 'building'
-
-        except Exception as e:
-          commit.build_results[ target ][ blueprint ][ 'status' ] = 'done'
-          commit.build_results[ target ][ blueprint ][ 'results' ] = 'Exception Queuing: "{0}"'.format( e )
-
-      done &= commit.build_results[ target ][ blueprint ][ 'status' ] == 'done'
-      success &= commit.build_results[ target ][ blueprint ].get( 'success', False )
-
-  if done:
-    logging.info( 'Build Complete for "{0}" of "{1}" branch "{2}" Complete'.format( commit.commit, commit.project.name, commit.branch ) )
-    commit.build_at = datetime.now( timezone.utc )
-    if not success:
-      logging.info( 'Build for "{0}" of "{1}" branch "{2}" Failed'.format( commit.commit, commit.project.name, commit.branch ) )
-      commit.done_at = datetime.now( timezone.utc )
-      slack.post_message( 'Build for "{0}" of "{1}", branch "{2}" Failed.'.format( commit.commit, commit.project.name, commit.branch ), slack.ERROR )
-      try:
-        commit.postResults()
-      except SCMException:
-        slack.post_message( 'Unable to Post Results for Commit, commit "{0}" of Project "{1}" Branch "{2}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
-
-      # clean up any package file that might of been uploaded to packrat
-      if commit.branch == commit.project.release_branch:  # tag version
-        if packrat is None:
-          packrat = getPackrat()
-
-        for filename, uri in commit.package_file_map.items():
-          try:
-            packrat.cinp.delete( uri )
-          except client.NotFound:
-            continue
-
-    else:
-      slack.post_message( 'Build for "{0}" of "{1}", branch "{2}" Finished.'.format( commit.commit, commit.project.name, commit.branch ), slack.SUCCESS )
-
-  commit.full_clean()
-  commit.save()
-
-# check for commits that need doc
-for commit in Commit.objects.filter( done_at__isnull=True, test_at__isnull=False, build_at__isnull=False, doc_at__isnull=True ):
-  if commit.branch != commit.project.release_branch:
-    commit.doc_at = datetime.now( timezone.utc )
-    commit.full_clean()
-    commit.save()
-    continue
-
-  if not commit.doc_results:
-    slack.post_message( 'No Doc for "{0}".'.format( commit.project.name ), slack.INFO )
-    commit.doc_at = datetime.now( timezone.utc )
-    commit.full_clean()
-    commit.save()
-    continue
-
-  done = True
-  success = True
-  for blueprint in commit.doc_results:
-    if not commit.doc_results[ blueprint ].get( 'status', None ):
-      logging.info( 'Queuing up Doc job for "{0}", branch "{1}", blueprint "{2}"'.format( commit.project.name, commit.branch, blueprint ) )
-      try:
-        item = QueueItem.inQueueTarget( commit.project, commit.branch, False, blueprint, 'doc', QUEUE_PRIORITY, '*AUTO*', commit )
-        commit.doc_results[ blueprint ][ 'status' ] = 'building'
-
-      except Exception as e:
-        commit.doc_results[ blueprint ][ 'status' ] = 'done'
-        commit.doc_results[ blueprint ][ 'results' ] = 'Exception Queuing: "{0}"'.format( e )
-
-    done &= commit.doc_results[ blueprint ][ 'status' ] == 'done'
-    success &= commit.doc_results[ blueprint ].get( 'success', False )
-
-  if done:  # failed doc building dosen't block anything, just make the comment and move on
-    logging.info( 'Doc Complete for "{0}", branch "{1}"'.format( commit.project.name, commit.branch ) )
-    commit.doc_at = datetime.now( timezone.utc )
-    if not success:
-      logging.info( 'Doc for "{0}", branch "{1}" failed'.format( commit.project.name, commit.branch ) )
-      slack.post_message( 'Doc for "{0}", branch "{1}" Failed.'.format( commit.project.name, commit.branch ), slack.ERROR )
-
-    else:
-      slack.post_message( 'Doc for "{0}", branch "{1}" Success.'.format( commit.project.name, commit.branch ), slack.SUCCESS )
-
-  commit.full_clean()
-  commit.save()
-
-# check for commits that are done
-for commit in Commit.objects.filter( done_at__isnull=True, test_at__isnull=False, build_at__isnull=False, doc_at__isnull=False ):
-  if commit.branch == commit.project.release_branch:  # tag version
-    if packrat is None:
-      packrat = getPackrat()
-
-    # only look to tag new package files on the release branch, they shold only be created on release branch anyway
-    for filename, uri in commit.package_file_map.items():
-      packrat_packagefile = packrat.cinp.get( uri )
-      try:
-        package = Package.objects.get( packrat_id=packrat_packagefile[ 'package' ] )
-      except Package.DoesNotExist:
-        packrat_package = packrat.cinp.get( packrat_packagefile[ 'package' ] )
-        package = Package( name=packrat_package[ 'name' ], packrat_id=packrat_packagefile[ 'package' ] )
-        package.full_clean()
-        package.save()
-
-      packagefile = PackageFile( filename=filename, packrat_id=uri )
-      packagefile.package = package
-      packagefile.commit = commit
-      packagefile.full_clean()
-      packagefile.save()
-
-    slack.post_message( 'Tagging "{0}" with tag "{1}".'.format( commit.project.name, commit.version ), slack.INFO )
-    try:
-      commit.tagVersion()
-    except Exception as e:
-      logging.warn( 'Exception while Tagging "{0}" with "{1}": "{2}"'.format( commit.project.name, commit.version, e ) )
-      slack.post_message( 'Tagging "{0}" with tag "{1}" Failed.'.format( commit.project.name, commit.version ), slack.ERROR )
-
-  slack.post_message( 'Commit "{0}" of "{1}", branch "{2}" Finished.'.format( commit.commit, commit.project.name, commit.branch ), slack.DONE )
-  commit.done_at = datetime.now( timezone.utc )
-  try:
-    commit.postResults()
-  except SCMException:
-    slack.post_message( 'Unable to Post Results for Commit, commit "{0}" of Project "{1}" Branch "{2}".'.format( commit.commit, commit.project, commit.branch ), slack.CRITICAL )
-  commit.full_clean()
-  commit.save()
-  continue
-
-if packrat is not None:
-  packrat.logout()
-
-os.unlink( PID_FILE )
+# Django's ORM isn't async safe, but we are single threaded here and only doing one ORM call at a time, so it should be ok. or So Claude asures me.
+os.environ[ 'DJANGO_ALLOW_ASYNC_UNSAFE' ] = 'true'
+asyncio.run( main() )
 logging.info( 'Done!' )
 logging.shutdown()
+os.unlink( PID_FILE )
 sys.exit( 0 )

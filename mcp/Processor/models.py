@@ -54,7 +54,7 @@ class Promotion( models.Model ):
   def getResults( self ):
     return self.result_map
 
-  @cinp.list_filter( name='in_process', paramater_type_list=[] )
+  @cinp.list_filter( name='in_process', parameter_type_list=[] )
   @staticmethod
   def filter_in_process():
     return Promotion.objects.filter( done_at__isnull=True )
@@ -109,16 +109,19 @@ QueueItem
   created = models.DateTimeField( editable=False, auto_now_add=True )
   updated = models.DateTimeField( editable=False, auto_now=True )
 
-  def allocateResources( self ):
+  async def allocateResources( self, contractor ):
     missing_list = []
     buildresource_list = []
     network_map = {}
     other_ip_count = 0
 
-    if self.project.site:
-      site = self.project.site
-    else:
+    try:
       site = Site.objects.filter( generic=True ).order_by( '?' )[0]  # yeah we might guess and pick the wrong site (without resources), but it will get retried, we should do some site scoring and do that instead
+    except IndexError:
+      missing_list.append( 'No Generic Site Available' )
+
+    if missing_list:
+      return ( list( set( missing_list ) ), None, None, None )
 
     # first allocate the network(s)
     for name, item in self.build.network_map.items():
@@ -130,7 +133,7 @@ QueueItem
 
       else:
         for network in Network.objects.filter( monolithic=False, size__gte=item[ 'min_addresses' ], site=site ):
-          if network.available( item[ 'min_addresses' ] ):
+          if await network.available( contractor, item[ 'min_addresses' ] ):
              network_map[ name ] = network
              break
 
@@ -144,7 +147,7 @@ QueueItem
     for buildresource in self.build.buildresource_set.all():
       quantity = buildresource.quantity
       resource = buildresource.resource.subclass
-      if not resource.available( site, quantity, buildresource.interface_map ):
+      if not await resource.available( contractor, site, quantity, buildresource.interface_map ):
         missing_list.append( 'Resource "{0}" Not Available in site "{1}"'.format( resource.name, site.name ) )
 
       buildresource_list.append( buildresource )
@@ -162,7 +165,7 @@ QueueItem
     # lastly make sure we have the IPs
     if other_ip_count:
       for network in Network.objects.filter( monolithic=False, size__gte=other_ip_count, site=site ).exclude( pk__in=network_map.items() ):
-        if network.available( other_ip_count ):
+        if await network.available( contractor, other_ip_count ):
            network_map[ '_OTHER_' ] = network
            break
 
@@ -216,7 +219,7 @@ QueueItem
 
     return item
 
-  @cinp.action( return_type='Integer', paramater_type_list=[ { 'type': '_USER_' }, { 'type': 'Model', 'model': Build }, 'String', 'Integer' ] )
+  @cinp.action( return_type='Integer', parameter_type_list=[ { 'type': '_USER_' }, { 'type': 'Model', 'model': Build }, 'String', 'Integer' ] )
   @staticmethod
   def queue( user, build, branch=None, priority=100 ):
     if branch is None:
@@ -225,7 +228,7 @@ QueueItem
     item = QueueItem.inQueueBuild( build, branch, True, priority, user.username )
     return item.pk
 
-  @cinp.list_filter( name='project', paramater_type_list=[ { 'type': 'Model', 'model': Project } ] )
+  @cinp.list_filter( name='project', parameter_type_list=[ { 'type': 'Model', 'model': Project } ] )
   @staticmethod
   def filter_project( project ):
     return QueueItem.objects.filter( project=project )
@@ -349,7 +352,7 @@ BuildJob
 
     return result
 
-  @cinp.action( paramater_type_list=[ { 'type': '_USER_' } ] )
+  @cinp.action( parameter_type_list=[ { 'type': '_USER_' } ] )
   def jobRan( self, user ):
     if self.ran_at is not None:  # been done, don't touch
       return
@@ -361,7 +364,7 @@ BuildJob
     self.full_clean()
     self.save()
 
-  @cinp.action( paramater_type_list=[ { 'type': '_USER_' } ] )
+  @cinp.action( parameter_type_list=[ { 'type': '_USER_' } ] )
   def acknowledge( self, user ):
     if self.acknowledged_at is not None:  # been done, don't touch
       return
@@ -373,7 +376,7 @@ BuildJob
     self.full_clean()
     self.save()
 
-  @cinp.action( return_type='Map', paramater_type_list=[ 'String' ] )
+  @cinp.action( return_type='Map', parameter_type_list=[ 'String' ] )
   def getInstanceState( self, name=None ):
     result = {}
     if name is not None:
@@ -392,7 +395,7 @@ BuildJob
 
     return result
 
-  @cinp.action( return_type='Map', paramater_type_list=[ 'String' ] )
+  @cinp.action( return_type='Map', parameter_type_list=[ 'String' ] )
   def getInstanceStructureId( self, name=None ):
     result = {}
     if name is not None:
@@ -411,13 +414,13 @@ BuildJob
 
     return result
 
-  def buildResources( self ):
+  async def buildResources( self, contractor ):
     for instance in self.buildjobresourceinstance_set.all():
-      instance.build()
+      await instance.build( contractor )
 
-  def releaseResources( self ):
+  async def releaseResources( self, contractor ):
     for instance in self.buildjobresourceinstance_set.all():
-      instance.release()
+      await instance.release( contractor )
 
   @property
   def instances_built( self ):
@@ -443,7 +446,7 @@ BuildJob
 
     return True
 
-  @cinp.list_filter( name='project', paramater_type_list=[ { 'type': 'Model', 'model': Project } ] )
+  @cinp.list_filter( name='project', parameter_type_list=[ { 'type': 'Model', 'model': Project } ] )
   @staticmethod
   def filter_project( project ):
     return BuildJob.objects.filter( project=project )
@@ -487,10 +490,6 @@ BuildJob
     return 'BuildJob "{0}" for build "{1}"'.format( self.pk, self.build.name )
 
 
-def getCookie():
-  return str( uuid.uuid4() )
-
-
 @cinp.model( not_allowed_verb_list=[ 'CREATE', 'DELETE', 'UPDATE' ], property_list=[ 'config_values', 'hostname' ] )
 class BuildJobResourceInstance( models.Model ):
   buildjob = models.ForeignKey( BuildJob, blank=True, null=True, on_delete=models.PROTECT )  # protected so we don't leave stranded resources
@@ -499,7 +498,7 @@ class BuildJobResourceInstance( models.Model ):
   _config_values = MapField( blank=True )
   auto_run = models.BooleanField( default=False )
   auto_provision = models.BooleanField( default=True )
-  cookie = models.CharField( max_length=36, default=getCookie )  # blank=True, null=True, editable=False ?
+  cookie = models.CharField( max_length=36, default='<undefined>' )  # blank=True, null=True, editable=False ?
   # build info
   name = models.CharField( max_length=50, blank=True, null=True  )
   index = models.IntegerField( blank=True, null=True )
@@ -558,7 +557,7 @@ class BuildJobResourceInstance( models.Model ):
   def config_values( self, value ):
     self._config_values = value
 
-  @cinp.action( paramater_type_list=[ 'String' ] )
+  @cinp.action( parameter_type_list=[ 'String' ] )
   def signalBuilt( self, cookie ):  # called from webhook
     if self.cookie != cookie:
       return
@@ -576,19 +575,17 @@ class BuildJobResourceInstance( models.Model ):
     self.full_clean()
     self.save()
 
-  @cinp.action( paramater_type_list=[ 'String' ] )
+  @cinp.action( parameter_type_list=[ 'String' ] )
   def signalDestroyed( self, cookie ):  # called from webhook
     if self.cookie != cookie:
       return
 
-    self.resource_instance.cleanup()
-
-    self.resource_instance = None  # cleanup will delete the resource_instance
+    # sark will kick off the clean up, we can't do it here b/c we don't have a contractor client instance
     self.state = 'released'
     self.full_clean()
     self.save()
 
-  @cinp.action( paramater_type_list=[ 'String', 'String' ] )
+  @cinp.action( parameter_type_list=[ 'String', 'String' ] )
   def setMessage( self, cookie, message ):
     if self.cookie != cookie:
       return
@@ -597,7 +594,7 @@ class BuildJobResourceInstance( models.Model ):
     self.full_clean()
     self.save()
 
-  @cinp.action( paramater_type_list=[ 'String' ] )
+  @cinp.action( parameter_type_list=[ 'String' ] )
   def jobRan( self, cookie ):
     if self.cookie != cookie:
       return
@@ -609,7 +606,7 @@ class BuildJobResourceInstance( models.Model ):
     self.full_clean()
     self.save()
 
-  @cinp.action( paramater_type_list=[ 'String', 'Boolean' ] )
+  @cinp.action( parameter_type_list=[ 'String', 'Boolean' ] )
   def setSuccess( self, cookie, success ):
     if self.cookie != cookie:
       return
@@ -618,7 +615,7 @@ class BuildJobResourceInstance( models.Model ):
     self.full_clean()
     self.save()
 
-  @cinp.action( paramater_type_list=[ 'String', 'String', 'String' ] )
+  @cinp.action( parameter_type_list=[ 'String', 'String', 'String' ] )
   def setResults( self, cookie, target, results ):
     if self.cookie != cookie:
       return
@@ -631,7 +628,7 @@ class BuildJobResourceInstance( models.Model ):
     elif self.buildjob.promotion:
       self.buildjob.promotion.setResults( self.name, results )
 
-  @cinp.action( paramater_type_list=[ 'String', 'String', 'Float' ] )
+  @cinp.action( parameter_type_list=[ 'String', 'String', 'Float' ] )
   def setScore( self, cookie, target, score ):
     if self.cookie != cookie:
       return
@@ -642,7 +639,7 @@ class BuildJobResourceInstance( models.Model ):
     if self.buildjob.commit:
       self.buildjob.commit.setScore( target, self.name, score )
 
-  @cinp.action( return_type='String', paramater_type_list=[ 'String', { 'type': 'Map' } ] )
+  @cinp.action( return_type='String', parameter_type_list=[ 'String', { 'type': 'Map' } ] )
   def addPackageFiles( self, cookie, package_file_map ):
     if self.cookie != cookie:
       return
@@ -651,14 +648,14 @@ class BuildJobResourceInstance( models.Model ):
     self.buildjob.full_clean()
     self.buildjob.save()
 
-  @cinp.action( return_type='Map', paramater_type_list=[ 'String' ]  )
+  @cinp.action( return_type='Map', parameter_type_list=[ 'String' ]  )
   def getValueMap( self, cookie ):
     if self.cookie != cookie:
       return
 
     return self.buildjob.value_map
 
-  @cinp.action( paramater_type_list=[ 'String', 'Map' ] )
+  @cinp.action( parameter_type_list=[ 'String', 'Map' ] )
   def updateValueMap( self, cookie, value_map ):
     if self.cookie != cookie:
       return
@@ -700,36 +697,36 @@ class BuildJobResourceInstance( models.Model ):
 
     return result
 
-  def allocate( self ):
+  async def allocate( self, contractor ):
     if self.state != 'new':
       raise Exception( 'Allready allocated' )
 
-    self.resource_instance.allocate( self.blueprint, self.config_values, self.hostname )
+    await self.resource_instance.allocate( contractor, self.blueprint, self.config_values, self.hostname )
 
     self.state = 'allocated'
     self.full_clean()
     self.save()
 
-  def updateConfig( self ):
+  async def updateConfig( self, contractor ):
     if self.state in ( 'releasing', 'released' ):
       return
 
-    self.resource_instance.updateConfig( self.config_values, self.hostname )
+    await self.resource_instance.updateConfig( contractor, self.config_values, self.hostname )
 
-  def build( self ):
+  async def build( self, contractor ):
     if self.state in ( 'building', 'built' ):
       return
 
     if self.state != 'allocated':
       raise Exception( 'Can only build when allocated' )
 
-    self.resource_instance.build()
+    await self.resource_instance.build( contractor )
 
     self.state = 'building'
     self.full_clean()
     self.save()
 
-  def release( self ):
+  async def release( self, contractor ):
     if self.state in ( 'releasing', 'released' ):
       return
 
@@ -741,7 +738,7 @@ class BuildJobResourceInstance( models.Model ):
 
     elif self.state == 'allocated':
       if self.resource_instance is not None:
-        self.resource_instance.cleanup()
+        await self.resource_instance.cleanup( contractor )
         self.resource_instance = None  # cleanup will delete the resource_instance
 
       self.state = 'released'
@@ -758,7 +755,7 @@ class BuildJobResourceInstance( models.Model ):
       self.save()
       return
 
-    self.resource_instance.release()
+    await self.resource_instance.release( contractor )
 
     self.state = 'releasing'
     self.full_clean()
@@ -767,6 +764,9 @@ class BuildJobResourceInstance( models.Model ):
   def clean( self, *args, **kwargs ):
     super().clean( *args, **kwargs )
     errors = {}
+
+    if self.cookie == '<undefined>':
+      self.cookie = str( uuid.uuid4() )
 
     if self.state not in INSTANCE_STATE_LIST:
       errors[ 'state' ] = 'Invalid'

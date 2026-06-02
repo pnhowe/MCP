@@ -91,7 +91,7 @@ class GitLab( SCM ):
     commit = self.conn.projects.get( mr.attributes[ 'source_project_id' ] ).commits.get( commit_hash )
     # end work arround
     #   the "normal" commit sould be the one above
-    #   and remove branch from the paramater list
+    #   and remove branch from the parameter list
 
     data = {}
     data[ 'state' ] = state

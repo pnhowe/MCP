@@ -12,7 +12,7 @@ export const fetchPromotion = createAuthThunk( 'promotions/fetchOne', async ( id
   return mcp.Processor_Promotion_get( parseInt( id ) );
 } );
 
-const promotionsSlice = createDetailListSlice( {
+const promotionsSlice = createDetailListSlice<Processor_Promotion, Processor_Promotion>( {
   name: 'promotions',
   fetchList: fetchPromotionList,
   fetchOne: fetchPromotion,

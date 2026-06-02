@@ -1,36 +1,29 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, Tab, Tabs, Typography } from '@mui/material';
 import BuildJobList from './BuildJobList';
 import QueueItemList from './QueueItemList';
 import PromotionList from './PromotionList';
 import CommitList from './CommitList';
 
-interface LocalState {
-  tab: number;
-}
-
-class GlobalView extends React.Component<{}, LocalState>
+const GlobalView: React.FC = () =>
 {
-  state: LocalState = { tab: 0 };
+  const [tab, setTab] = useState( 0 );
 
-  render()
-  {
-    return (
-      <Box>
-        <Typography variant="h5" gutterBottom>Global</Typography>
-        <Tabs value={ this.state.tab } onChange={ ( _, v ) => this.setState( { tab: v } ) } sx={{ mb: 2 }}>
-          <Tab label="Build Jobs" />
-          <Tab label="Queue" />
-          <Tab label="Promotions" />
-          <Tab label="Commits (In Progress)" />
-        </Tabs>
-        { this.state.tab === 0 && <BuildJobList showProject /> }
-        { this.state.tab === 1 && <QueueItemList /> }
-        { this.state.tab === 2 && <PromotionList /> }
-        { this.state.tab === 3 && <CommitList /> }
-      </Box>
-    );
-  }
-}
+  return (
+    <Box>
+      <Typography variant="h5" gutterBottom>Global</Typography>
+      <Tabs value={ tab } onChange={ ( _, v ) => setTab( v ) } sx={{ mb: 2 }}>
+        <Tab label="Build Jobs" />
+        <Tab label="Queue" />
+        <Tab label="Promotions" />
+        <Tab label="Commits (In Progress)" />
+      </Tabs>
+      { tab === 0 && <BuildJobList showProject /> }
+      { tab === 1 && <QueueItemList /> }
+      { tab === 2 && <PromotionList /> }
+      { tab === 3 && <CommitList /> }
+    </Box>
+  );
+};
 
 export default GlobalView;

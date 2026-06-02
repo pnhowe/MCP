@@ -14,12 +14,15 @@ django.setup()
 
 import sys
 import logging
+import asyncio
 from logging.handlers import SysLogHandler
 from datetime import datetime, timezone, timedelta
 from django.db.models import ProtectedError
 
-from mcp.Processor.models import QueueItem, BuildJob
+from mcp.Processor.models import QueueItem, BuildJob, BuildJobResourceInstance
 from mcp.lib.Slack import getSlack
+from mcp.lib.t3kton import getContractor
+
 
 # in Hours
 CLEANUP_DELAY = 0.17  # 10 min
@@ -27,11 +30,185 @@ AUTO_ACKNOLEDGE_DELAY = 24.0
 
 PID_FILE = '/var/run/mcp/sark.pid'
 
+
+async def main():
+  try:
+    slack = getSlack( 'sark' )
+
+    async with getContractor() as contractor:
+      await _run( slack, contractor )
+  except Exception as e:
+    logging.exception( 'Exception "{0}" trying to connect to contractor and or slack, try again later'.format( e ) )
+
+
+async def _run( slack, contractor ):
+  # Iterate over the Queued Items
+  for item in QueueItem.objects.all().order_by( '-priority' ):  # start with the biggest number first
+    if 'error' in item.resource_status_map:  # skip items that had an error
+      if '--clean-errors' in sys.argv:
+        logging.info( 'Cleaning error status for Queue Item "{0}".'.format( item ) )
+        item.delete()
+        continue
+
+      else:
+        continue
+
+    job = None
+    try:
+      # see if we can get the resources
+      ( missing_list, buildresource_list, network_map, site ) = await item.allocateResources( contractor )
+      if missing_list:
+        logging.info( 'Queue Item "{0}" waiting for "{1}"'.format( item, missing_list ) )
+        item.resource_status_map = { 'resource': missing_list }
+        item.full_clean()
+        item.save()
+        continue
+
+      # Build a job
+      job = BuildJob()
+      job.manual = item.manual
+      job.user = item.user
+      job.build = item.build
+      job.project = item.project
+      job.branch = item.branch
+      job.target = item.target
+      job.commit = item.commit
+      job.promotion = item.promotion
+      job.full_clean()
+      job.save()
+
+      job.network_list.set( network_map.values() )
+
+      for buildresource in buildresource_list:
+        resource = buildresource.resource.subclass
+        interface_map = buildresource.interface_map
+        for name in interface_map.keys():
+          interface_map[ name ][ 'network' ] = network_map[ interface_map[ name ].get( 'network', '_OTHER_' ) ]
+
+        await resource.allocate( contractor, site, job, buildresource, interface_map )
+
+      await job.buildResources( contractor )
+      logging.info( 'Starting Queue Item "{0}" as job "{1}" in site "{2}"'.format( item, job.id, site.name ) )
+
+      # remove the queue Item
+      slack.post_message( 'Job {0} ( project: "{1}", build: "{2}", branch: "{3}", target: "{4}" ) for Queue Item {5} submitted in site "{6}".'.format( job.id, job.project.name, job.build.name, job.branch, job.target, item.id, site.name ), slack.INFO )
+      item.delete()
+
+    except Exception as e:
+      logging.exception( 'Exception "{0}" creating job for queue item "{1}", skiping...'.format( e, item.pk ) )
+      try:
+        if job is not None:
+          await job.releaseResources( contractor )
+          job.delete()  # TODO: wrap in a try, but only ignore when a job is not saved
+
+      except Exception as e2:
+        logging.exception( 'Exception "{0}" releaseing while releasing "{1}", probably creating a big mess...'.format( e2, item.pk ) )
+        slack.post_message( '!!! Error releasing when there was an Exception allocating, I am probably making a mess !!!', slack.CRITICAL )
+
+      item.resource_status_map = { 'error': 'Exception: "{0}"'.format( e ) }
+      item.full_clean()
+      item.save()
+
+  # Iterate over the build new jobs
+  for job in BuildJob.objects.filter( built_at__isnull=True, ran_at__isnull=True, reported_at__isnull=True, released_at__isnull=True ):
+    # all done, set to built
+    if job.instances_built:
+      logging.info( 'Setting job "{0}" to Built.'.format( job.id ) )
+      job.built_at = datetime.now( timezone.utc )
+      job.full_clean()
+      job.save()
+
+  # Iterate over the built jobs and see if all the instances are done, if so, flag as ran
+  for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=True, reported_at__isnull=True, released_at__isnull=True ):
+    # all done, set to ran
+    if job.instances_ran:
+      logging.info( 'Setting job "{0}" to Ran.'.format( job.id ) )
+      job.ran_at = datetime.now( timezone.utc )
+      job.full_clean()
+      job.save()
+
+  # Iterate over the Ran jobs
+  for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False, reported_at__isnull=True, released_at__isnull=True ):
+    if job.commit is not None:
+      logging.info( 'Signaling Complete to target "{0}" of build "{1}" for job "{2}".'.format( job.target, job.build.name, job.id ) )
+      job.commit.signalComplete( job.target, job.build.name, job.succeeded )
+
+    elif job.promotion is not None:
+      logging.info( 'Signaling Complete to promotion of build "{1}" for job "{0}".'.format( job.build, job.id ) )
+      job.promotion.signalComplete( job.build, job.succeeded )
+
+    else:
+      logging.info( 'Job has nothing to report to, hopfully that was intentional' )
+
+    commit = job.commit
+    if commit is not None:
+      commit.package_file_map.update( job.package_file_map )
+      commit.full_clean()
+      commit.save()
+
+    logging.info( 'Setting job "{0}" to Reported.'.format( job.id ) )
+    job.reported_at = datetime.now( timezone.utc )
+    job.full_clean()
+    job.save()
+
+    results = ''
+    for instance in job.buildjobresourceinstance_set.all().order_by( 'name' ):
+      results += 'Instance: *{0}*\n'.format( instance )
+      try:
+        results += 'Success: *{0}*\n'.format( instance.success )
+      except KeyError:
+        pass
+
+    slack.post_message( 'Job {0} ( project: "{1}", build: "{2}", branch: "{3}", target: "{4}" ) Completed.\n{5}'.format( job.id, job.project.name, job.build.name, job.branch, job.target, results ), slack.INFO )
+
+  # iterate over the Reported jobs that are not manual and look to see if the resources are all released
+  for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False, reported_at__isnull=False, acknowledged_at__isnull=True, released_at__isnull=True, manual=False ):
+    if job.succeeded:  # success auto Acknoledges
+      job.acknowledged_at = datetime.now( timezone.utc )
+      job.full_clean()
+      job.save()
+      continue
+
+    # auto acknoledge after AUTO_ACKNOLEDGE_DELAY
+    if job.reported_at < ( datetime.now( timezone.utc ) - timedelta( hours=AUTO_ACKNOLEDGE_DELAY ) ):
+      job.acknowledged_at = datetime.now( timezone.utc )
+      job.full_clean()
+      job.save()
+      continue
+
+  # iterate over the Acknoledged jobs, and release the resources
+  for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False, reported_at__isnull=False, acknowledged_at__isnull=False, released_at__isnull=True ):
+    logging.info( 'Releasing resources for job "{0}".'.format( job.id ) )
+    try:
+      await job.releaseResources( contractor )
+    except ProtectedError:
+      logging.warning( 'Job "{0}" not releaseable, will try again.'.format( job.id ) )
+
+    # resources all released, set job to released
+    if job.instances_released:
+      logging.info( 'Setting job "{0}" to Released.'.format( job.id ) )
+      job.released_at = datetime.now( timezone.utc )
+      job.full_clean()
+      job.save()
+
+  # Iterate over released jobs that are at least CLEANUP_DELAY hours old and delete them
+  for job in BuildJob.objects.filter( released_at__lt=( datetime.now( timezone.utc ) - timedelta( hours=CLEANUP_DELAY ) ) ):
+    logging.info( 'Deleting job "{0}".'.format( job.id ) )
+    job.delete()
+
+  # Iterate over the BuildJobResourceInstance which need to be cleaned up
+  for instance in BuildJobResourceInstance.objects.filter( state='released', resource_instance__isnull=False ):
+    await instance.resource_instance.cleanup( contractor )
+    instance.resource_instance = None  # cleanup will delete the resource_instance
+    instance.full_clean()
+    instance.save()
+
 logging.basicConfig()
 logger = logging.getLogger()
 handler = SysLogHandler( address='/dev/log', facility=SysLogHandler.LOG_DAEMON )
 handler.setFormatter( logging.Formatter( fmt='sark[%(process)d]: %(message)s' ) )
 logger.addHandler( handler )
+logging.info( 'Starting...' )
 if '-v' in sys.argv:
   logger.setLevel( logging.DEBUG )
 elif '-c' in sys.argv:
@@ -47,170 +224,10 @@ tmp = open( PID_FILE, 'w' )
 tmp.write( '{0}\n'.format( os.getpid() ) )
 tmp.close()
 
-try:
-  slack = getSlack( 'sark' )
-except Exception as e:
-  logging.exception( 'Exception "{0}" trying to connect to slack, try again later'.format( e ) )
-  os.unlink( PID_FILE )
-  logging.shutdown()
-  sys.exit( 0 )
-
-# Iterate over the Queued Items
-for item in QueueItem.objects.all().order_by( '-priority' ):  # start with the biggest number first
-  if 'error' in item.resource_status_map:  # skip items that had an error
-    continue
-
-  job = None
-  try:
-    # see if we can get the resources
-    ( missing_list, buildresource_list, network_map, site ) = item.allocateResources()
-    if missing_list:
-      logging.info( 'Queue Item "{0}" waiting for "{1}"'.format( item, missing_list ) )
-      item.resource_status_map = { 'resource': missing_list }
-      item.full_clean()
-      item.save()
-      continue
-
-    # Build a job
-    job = BuildJob()
-    job.manual = item.manual
-    job.user = item.user
-    job.build = item.build
-    job.project = item.project
-    job.branch = item.branch
-    job.target = item.target
-    job.commit = item.commit
-    job.promotion = item.promotion
-    job.full_clean()
-    job.save()
-
-    job.network_list.set( network_map.values() )
-
-    for buildresource in buildresource_list:
-      resource = buildresource.resource.subclass
-      interface_map = buildresource.interface_map
-      for name in interface_map.keys():
-        interface_map[ name ][ 'network' ] = network_map[ interface_map[ name ].get( 'network', '_OTHER_' ) ]
-
-      resource.allocate( site, job, buildresource, interface_map )
-
-    job.buildResources()
-    logging.info( 'Starting Queue Item "{0}" as job "{1}" in site "{2}"'.format( item, job.id, site.name ) )
-
-    # remove the queue Item
-    slack.post_message( 'Job {0} ( project: "{1}", build: "{2}", branch: "{3}", target: "{4}" ) for Queue Item {5} submitted in site "{6}".'.format( job.id, job.project.name, job.build.name, job.branch, job.target, item.id, site.name ), slack.INFO )
-    item.delete()
-
-  except Exception as e:
-    logging.exception( 'Exception "{0}" creating job for queue item "{1}", skiping...'.format( e, item.pk ) )
-    try:
-      if job is not None:
-        job.releaseResources()
-        job.delete()  # TODO: wrap in a try, but only ignore when a job is not saved
-
-    except Exception as e2:
-      logging.exception( 'Exception "{0}" releaseing while releasing "{1}", probably creating a big mess...'.format( e2, item.pk ) )
-      slack.post_message( '!!! Error releasing when there was an Exception allocating, I am probably making a mess !!!', slack.CRITICAL )
-
-    item.resource_status_map = { 'error': 'Exception: "{0}"'.format( e ) }
-    item.full_clean()
-    item.save()
-
-
-# Iterate over the build new jobs
-for job in BuildJob.objects.filter( built_at__isnull=True, ran_at__isnull=True, reported_at__isnull=True, released_at__isnull=True ):
-  # all done, set to built
-  if job.instances_built:
-    logging.info( 'Setting job "{0}" to Built.'.format( job.id ) )
-    job.built_at = datetime.now( timezone.utc )
-    job.full_clean()
-    job.save()
-
-
-# Iterate over the built jobs and see if all the instances are done, if so, flag as ran
-for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=True, reported_at__isnull=True, released_at__isnull=True ):
-  # all done, set to ran
-  if job.instances_ran:
-    logging.info( 'Setting job "{0}" to Ran.'.format( job.id ) )
-    job.ran_at = datetime.now( timezone.utc )
-    job.full_clean()
-    job.save()
-
-
-# Iterate over the Ran jobs
-for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False, reported_at__isnull=True, released_at__isnull=True ):
-  if job.commit is not None:
-    logging.info( 'Signaling Complete to target "{0}" of build "{1}" for job "{2}".'.format( job.target, job.build.name, job.id ) )
-    job.commit.signalComplete( job.target, job.build.name, job.succeeded )
-
-  elif job.promotion is not None:
-    logging.info( 'Signaling Complete to promotion of build "{1}" for job "{0}".'.format( job.build, job.id ) )
-    job.promotion.signalComplete( job.build, job.succeeded )
-
-  else:
-    logging.info( 'Job has nothing to report to, hopfully that was intentional' )
-
-  commit = job.commit
-  if commit is not None:
-    commit.package_file_map.update( job.package_file_map )
-    commit.full_clean()
-    commit.save()
-
-  logging.info( 'Setting job "{0}" to Reported.'.format( job.id ) )
-  job.reported_at = datetime.now( timezone.utc )
-  job.full_clean()
-  job.save()
-
-  results = ''
-  for instance in job.buildjobresourceinstance_set.all().order_by( 'name' ):
-    results += 'Instance: *{0}*\n'.format( instance )
-    try:
-      results += 'Success: *{0}*\n'.format( instance.success )
-    except KeyError:
-      pass
-
-  slack.post_message( 'Job {0} ( project: "{1}", build: "{2}", branch: "{3}", target: "{4}" ) Completed.\n{5}'.format( job.id, job.project.name, job.build.name, job.branch, job.target, results ), slack.INFO )
-
-
-# iterate over the Reported jobs that are not manual and look to see if the resources are all released
-for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False, reported_at__isnull=False, acknowledged_at__isnull=True, released_at__isnull=True, manual=False ):
-  if job.succeeded:  # success auto Acknoledges
-    job.acknowledged_at = datetime.now( timezone.utc )
-    job.full_clean()
-    job.save()
-    continue
-
-  # auto acknoledge after AUTO_ACKNOLEDGE_DELAY
-  if job.reported_at < ( datetime.now( timezone.utc ) - timedelta( hours=AUTO_ACKNOLEDGE_DELAY ) ):
-    job.acknowledged_at = datetime.now( timezone.utc )
-    job.full_clean()
-    job.save()
-    continue
-
-
-# iterate over the Acknoledged jobs, and release the resources
-for job in BuildJob.objects.filter( built_at__isnull=False, ran_at__isnull=False, reported_at__isnull=False, acknowledged_at__isnull=False, released_at__isnull=True ):
-  logging.info( 'Releasing resources for job "{0}".'.format( job.id ) )
-  try:
-    job.releaseResources()
-  except ProtectedError:
-    logging.warn( 'Job "{0}" not releaseable, will try again.'.format( job.id ) )
-
-  # resources all released, set job to released
-  if job.instances_released:
-    logging.info( 'Setting job "{0}" to Released.'.format( job.id ) )
-    job.released_at = datetime.now( timezone.utc )
-    job.full_clean()
-    job.save()
-
-
-# Iterate over released jobs that are at least CLEANUP_DELAY hours old and delete them
-for job in BuildJob.objects.filter( released_at__lt=( datetime.now( timezone.utc ) - timedelta( hours=CLEANUP_DELAY ) ) ):
-  logging.info( 'Deleting job "{0}".'.format( job.id ) )
-  job.delete()
-
-
-os.unlink( PID_FILE )
+# Django's ORM isn't async safe, but we are single threaded here and only doing one ORM call at a time, so it should be ok. or So Claude asures me.
+os.environ[ 'DJANGO_ALLOW_ASYNC_UNSAFE' ] = 'true'
+asyncio.run( main() )
 logging.info( 'Done!' )
 logging.shutdown()
+os.unlink( PID_FILE )
 sys.exit( 0 )
